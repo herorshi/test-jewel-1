@@ -26,7 +26,6 @@ function Plus() {
   };
 
   const optionsUnit = [{ id: 1, name: "ชิ้น" }, { id: 2, name: "น้ำหนัก" }];
-
   const [storeItem, setStoreItem] = useState([]);
   const [priceNet, setPriceNet] = useState(0);
   const [discountNet, setDiscountNet] = useState(0);
@@ -36,15 +35,13 @@ function Plus() {
   const [note, setNote] = useState("");
   const [remark, setRemark] = useState("");
   const [storeOrder, setStoreOrder] = useState([]);
-
-  const [statusUpdate,setStatusUpdate] = useState(false);
-  const [indexUpdate,setIndexUpdate] = useState(null);
-
+  const [statusUpdate, setStatusUpdate] = useState(false);
+  const [indexUpdate, setIndexUpdate] = useState(null);
   const [objDetail, setObjDetail] = useState(defaultDocument);
 
   const loadFirst = () => {
     let dataObject = [];
-    setStatusUpdate(false)
+    
     dataObject = [...dataObject, { ...objDefault }];
     objDefault.id = uuidv4();
     dataObject = [...dataObject, { ...objDefault }];
@@ -54,6 +51,7 @@ function Plus() {
     setObjDetail({ ...defaultDocument });
     setNote("");
     setRemark("");
+    setStatusUpdate(false);
   };
 
   useEffect(() => {
@@ -81,13 +79,9 @@ function Plus() {
           }
         }, 0);
 
-
-
         let sumNetAfterDiscount = storeItem.reduce((accumulator, currentValue) => {
           if (currentValue["codeProduct"] && currentValue["qty"] && currentValue["pricePerUnit"] && currentValue["unit"]) {
-            return (
-              parseFloat(accumulator || 0) + (parseFloat(currentValue["priceNet"] ))
-            );
+            return parseFloat(accumulator || 0) + parseFloat(currentValue["priceNet"]);
           } else {
             return accumulator;
           }
@@ -154,48 +148,45 @@ function Plus() {
     setStoreItem([...dataObject]);
   };
 
-
   const addOrder = () => {
-
-    if(!objDetail.numberDoc){
+    if (!objDetail.numberDoc) {
       alert("กรุณากรอก หมายเลขเอกสาร");
-      return
+      return;
     }
 
-    if(!objDetail.dateDoc){
-      alert("กรุณากรอก วันที่ออกเอกสาร")
-      return
-    }
-    
-    if(!objDetail.dueDateDoc){
-      alert("กรุณากรอก วันที่ครบกำหนด")
-      return
+    if (!objDetail.dateDoc) {
+      alert("กรุณากรอก วันที่ออกเอกสาร");
+      return;
     }
 
-    if(!objDetail.nameCustomer){
+    if (!objDetail.dueDateDoc) {
+      alert("กรุณากรอก วันที่ครบกำหนด");
+      return;
+    }
+
+    if (!objDetail.nameCustomer) {
       alert("กรุณากรอก ชื่อลูกค้า");
-      return 
+      return;
     }
 
-    if(!objDetail.addressInvoice){
-      alert("กรุณากรอก ที่อยู่ออกใบกำกับภาษี")
-      return
+    if (!objDetail.addressInvoice) {
+      alert("กรุณากรอก ที่อยู่ออกใบกำกับภาษี");
+      return;
     }
 
-    if(!objDetail.addressReceive){
-      alert("กรุณากรอก ที่อยู่จัดส่ง")
-      return 
+    if (!objDetail.addressReceive) {
+      alert("กรุณากรอก ที่อยู่จัดส่ง");
+      return;
     }
-    if(!objDetail.refNumberDoc){
-      alert("กรุณากรอก หมายเลขเอกสารอ้างอิง")
-      return 
-    }
-
-    if(!objDetail.currency){
-      alert("กรุณากรอก สกุลเงิน")
-      return
+    if (!objDetail.refNumberDoc) {
+      alert("กรุณากรอก หมายเลขเอกสารอ้างอิง");
+      return;
     }
 
+    if (!objDetail.currency) {
+      alert("กรุณากรอก สกุลเงิน");
+      return;
+    }
 
     let objOrder = {
       objDetail,
@@ -209,50 +200,47 @@ function Plus() {
       remark,
       id: uuidv4()
     };
-    let dataOrder = [...storeOrder, objOrder] 
+    let dataOrder = [...storeOrder, objOrder];
     setStoreOrder([...dataOrder]);
     loadFirst();
-
   };
-
 
   const deleteProduct = index => {
     const newItems = storeItem.filter((_, i) => i !== index); // สร้าง array ใหม่โดยไม่รวม element ที่ index
     setStoreItem(newItems); // อัปเดต state
   };
   const deleteOrder = index => {
-    if(confirm("ยืนยันลบออเดอร์")){
+    if (confirm("ยืนยันลบออเดอร์")) {
       const newItems = storeOrder.filter((_, i) => i !== index);
       setStoreOrder(newItems);
     }
-
   };
 
   const updateOrder = index => {
     let orderUpdate = [...storeOrder];
-    setIndexUpdate(index)
+    setIndexUpdate(index);
     setStatusUpdate(true);
-    setStoreItem([...orderUpdate[index].storeItem])
-    setObjDetail({...orderUpdate[index].objDetail})
+    setStoreItem([...orderUpdate[index].storeItem]);
+    setObjDetail({ ...orderUpdate[index].objDetail });
     setNote(orderUpdate[index].note);
-    setRemark(orderUpdate[index].remark)
+    setRemark(orderUpdate[index].remark);
   };
 
-  const updateOrderConfirm = ()=>{
+  const updateOrderConfirm = () => {
     let index = indexUpdate;
-    let orderItem =  [...storeOrder]
-    orderItem[index].storeItem = [...storeItem]
-    orderItem[index].objDetail = {...objDetail}
-    orderItem[index].note = note
-    orderItem[index].remark = remark 
-    orderItem[index].priceNet = priceNet
-    orderItem[index].discountNet = discountNet
-    orderItem[index].netSumFinal = netSumFinal
-    orderItem[index].vatSumPrice = vatSumPrice
-    orderItem[index].grandTotal = grandTotal
-    setStoreOrder([...orderItem])
+    let orderItem = [...storeOrder];
+    orderItem[index].storeItem = [...storeItem];
+    orderItem[index].objDetail = { ...objDetail };
+    orderItem[index].note = note;
+    orderItem[index].remark = remark;
+    orderItem[index].priceNet = priceNet;
+    orderItem[index].discountNet = discountNet;
+    orderItem[index].netSumFinal = netSumFinal;
+    orderItem[index].vatSumPrice = vatSumPrice;
+    orderItem[index].grandTotal = grandTotal;
+    setStoreOrder([...orderItem]);
     loadFirst();
-  }
+  };
 
   return (
     <>
@@ -321,17 +309,13 @@ function Plus() {
             <p className=" me-auto">
               <span className="title-product"> รายการสินค้า </span>
             </p>
-            
 
             <button className="pd-number bd-none btn-color text-nowrap" onClick={addProduct}>
               เพิ่มสินค้า
             </button>
           </div>
 
-          <p className="remain-cal">
-              *สินค้าจะถูกคำนวณเมื่อมีข้อมูล รหัสสินค้า,จำนวน,ราคาหน่วย,หน่วย,ส่วนลดถ้าไม่ใส่จะเป็น 0{" "}
-          </p>
-
+          <p className="remain-cal">*สินค้าจะถูกคำนวณเมื่อมีข้อมูล รหัสสินค้า,จำนวน,ราคาหน่วย,หน่วย,ส่วนลดถ้าไม่ใส่จะเป็น 0 </p>
 
           <table>
             <thead>
@@ -477,24 +461,18 @@ function Plus() {
           cancel
         </button>
 
-        {
-          statusUpdate ? 
-        <button className="pd-number bd-none btn-color" onClick={()=>updateOrderConfirm()}>
-          Confirm update
-        </button> :
-        <button className="pd-number bd-none btn-color " onClick={addOrder}>
-          save
-        </button>        
-        }
-
-
-
+        {statusUpdate ? (
+          <button className="pd-number bd-none btn-color" onClick={() => updateOrderConfirm()}>
+            Confirm update
+          </button>
+        ) : (
+          <button className="pd-number bd-none btn-color " onClick={addOrder}>
+            save
+          </button>
+        )}
       </div>
 
-
-
-              {
-                storeOrder.length > 0 &&
+      {storeOrder.length > 0 && (
         <div className="box-content  w-100-percent bt-none">
           <div class="text-center w-100-percent">
             <span class="text-header">รายการออเดอร์</span>
@@ -560,7 +538,7 @@ function Plus() {
               <tbody>
                 {storeOrder.map((item, index) => (
                   <tr key={item.id}>
-                    <td className="text-center align-items-center">{index+1}</td>
+                    <td className="text-center align-items-center">{index + 1}</td>
                     <td className="pd-number border-table text-center align-items-center">{item.objDetail.numberDoc}</td>
                     <td className="pd-number border-table text-center align-items-center">{item.objDetail.dateDoc}</td>
                     <td className="pd-number border-table text-center align-items-center">{item.objDetail.dueDateDoc}</td>
@@ -578,21 +556,12 @@ function Plus() {
                     <td className="pd-number border-table text-center align-items-center">{item.grandTotal}</td>
 
                     <td className="pd-number border-table text-center align-items-center">
-
-                  
-
-                      
-                      <button className="pd-number bd-none btn-color" onClick={()=>updateOrder(index)}>
+                      <button className="pd-number bd-none btn-color" onClick={() => updateOrder(index)}>
                         Update
                       </button>
-                      
-
-
-
-
                     </td>
                     <td className="pd-number border-table text-center align-items-center">
-                      <button className="pd-number bd-none btn-delete h-35" onClick={()=>deleteOrder(index)}>
+                      <button className="pd-number bd-none btn-delete h-35" onClick={() => deleteOrder(index)}>
                         Delete
                       </button>
                     </td>
@@ -603,9 +572,8 @@ function Plus() {
           </div>
         </div>
 
-              }
-
-     
+        
+      )}
     </>
   );
 }

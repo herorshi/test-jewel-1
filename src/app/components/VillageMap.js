@@ -10,7 +10,10 @@ const ACTION_TYPES = {
   ADD_ZONE: 'ADD_ZONE',
   REMOVE_ZONE: 'REMOVE_ZONE',
   EDIT_MARKER: 'EDIT_MARKER',
-  EDIT_ZONE: 'EDIT_ZONE'
+  EDIT_ZONE: 'EDIT_ZONE',
+  MOVE_GROUP: 'MOVE_GROUP',
+  MOVE_ZONE_GROUP: 'MOVE_ZONE_GROUP',
+  MOVE_MIXED_GROUP: 'MOVE_MIXED_GROUP'
 };
 
 export default function VillageMap() {
@@ -55,6 +58,18 @@ export default function VillageMap() {
   // เพิ่ม state สำหรับเก็บประวัติการเคลื่อนไหว
   const [moveHistory, setMoveHistory] = useState([]);
   const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
+  // เพิ่ม state สำหรับการเลือกแบบกลุ่ม
+  const [isGroupSelecting, setIsGroupSelecting] = useState(false);
+  const [selectedMarkers, setSelectedMarkers] = useState([]);
+  const [selectedZones, setSelectedZones] = useState([]);
+  const [groupSelectionStart, setGroupSelectionStart] = useState(null);
+  const [groupSelectionEnd, setGroupSelectionEnd] = useState(null);
+  const [isDraggingGroup, setIsDraggingGroup] = useState(false);
+  const [isDraggingZoneGroup, setIsDraggingZoneGroup] = useState(false);
+      const [isDraggingMixed, setIsDraggingMixed] = useState(false);
+    const [groupDragOffset, setGroupDragOffset] = useState({ x: 0, y: 0 });
+    const [dragReference, setDragReference] = useState(null);
+    const [justFinishedGroupSelection, setJustFinishedGroupSelection] = useState(false);
 
   // สีและชื่อสี
   const colorOptions = [
@@ -139,8 +154,9 @@ export default function VillageMap() {
 
   // จัดการการคลิกที่ภาพ (สร้าง marker)
   const handleImageClick = e => {
-    if (isDragging || hasDragged) {
+    if (isDragging || hasDragged || isGroupSelecting || isDraggingGroup || isDraggingZoneGroup || isDraggingMixed || selectedMarkers.length > 0 || selectedZones.length > 0 || justFinishedGroupSelection) {
       setHasDragged(false);
+      setJustFinishedGroupSelection(false);
       return;
     }
 
@@ -221,6 +237,62 @@ export default function VillageMap() {
               : m
           ));
           break;
+        case ACTION_TYPES.MOVE_GROUP:
+          setMarkers(markers.map(marker => {
+            const originalMarker = action.data.markers.find(m => m.id === marker.id);
+            if (originalMarker) {
+              return {
+                ...marker,
+                x: originalMarker.originalX,
+                y: originalMarker.originalY
+              };
+            }
+            return marker;
+          }));
+          break;
+        case ACTION_TYPES.MOVE_ZONE_GROUP:
+          setZones(zones.map(zone => {
+            const originalZone = action.data.zones.find(z => z.id === zone.id);
+            if (originalZone) {
+              return {
+                ...zone,
+                x: originalZone.originalX,
+                y: originalZone.originalY
+              };
+            }
+            return zone;
+          }));
+          break;
+        case ACTION_TYPES.MOVE_MIXED_GROUP:
+          // undo สำหรับ markers
+          if (action.data.markers) {
+            setMarkers(markers.map(marker => {
+              const originalMarker = action.data.markers.find(m => m.id === marker.id);
+              if (originalMarker) {
+                return {
+                  ...marker,
+                  x: originalMarker.originalX,
+                  y: originalMarker.originalY
+                };
+              }
+              return marker;
+            }));
+          }
+          // undo สำหรับ zones
+          if (action.data.zones) {
+            setZones(zones.map(zone => {
+              const originalZone = action.data.zones.find(z => z.id === zone.id);
+              if (originalZone) {
+                return {
+                  ...zone,
+                  x: originalZone.originalX,
+                  y: originalZone.originalY
+                };
+              }
+              return zone;
+            }));
+          }
+          break;
       }
       
       setCurrentIndex(currentIndex - 1);
@@ -233,6 +305,9 @@ export default function VillageMap() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         undo();
+      }
+      if (e.key === 'Escape') {
+        clearSelection();
       }
     };
 
@@ -356,8 +431,79 @@ export default function VillageMap() {
     if (e.detail === 2) {
       return;
     }
+    
+    // ป้องกันการลากถ้ากำลังทำ group selection
+    if (isGroupSelecting) {
+      return;
+    }
+    
     e.preventDefault();
     e.stopPropagation();
+    
+    // ตรวจสอบว่า marker นี้อยู่ในกลุ่มที่เลือกหรือไม่
+    if (selectedMarkers.includes(marker.id) && selectedMarkers.length > 0) {
+      // ถ้าอยู่ในกลุ่มที่เลือก ให้ใช้การลากกลุ่มแทน
+      const rect = imageRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      // ถ้ามีทั้ง markers และ zones ที่เลือกไว้ ให้ใช้การลากแบบผสม
+      if (selectedZones.length > 0) {
+        // บันทึก original positions สำหรับทั้ง markers และ zones
+        setMarkers(prevMarkers =>
+          prevMarkers.map(m => {
+            if (selectedMarkers.includes(m.id)) {
+              return { ...m, originalX: m.x, originalY: m.y };
+            }
+            return m;
+          })
+        );
+        
+        setZones(prevZones =>
+          prevZones.map(zone => {
+            if (selectedZones.includes(zone.id)) {
+              return { ...zone, originalX: zone.x, originalY: zone.y };
+            }
+            return zone;
+          })
+        );
+        
+        setIsDraggingMixed(true);
+        
+        // เก็บ reference point และ offset
+        const referencePoint = { x: marker.x, y: marker.y, type: 'marker', id: marker.id };
+        setDragReference(referencePoint);
+        setGroupDragOffset({ 
+          x: x - marker.x, 
+          y: y - marker.y 
+        });
+        return;
+      }
+      
+      // ถ้าเลือกเฉพาะ markers
+      setMarkers(prevMarkers =>
+        prevMarkers.map(m => {
+          if (selectedMarkers.includes(m.id)) {
+            return { ...m, originalX: m.x, originalY: m.y };
+          }
+          return m;
+        })
+      );
+      
+      setIsDraggingGroup(true);
+      setGroupDragOffset({ 
+        x: x - marker.x, 
+        y: y - marker.y 
+      });
+      return;
+    }
+    
+    // ล้างการเลือกเก่าถ้าคลิกที่ marker ที่ไม่ได้เลือก
+    if (selectedMarkers.length > 0) {
+      setSelectedMarkers([]);
+    }
+    
+    // ถ้าไม่ได้อยู่ในกลุ่มที่เลือก ใช้การลาก marker เดี่ยว
     setDraggedMarker(marker);
     setIsDragging(true);
   };
@@ -397,7 +543,7 @@ export default function VillageMap() {
     );
   };
 
-  // เริ่มการตรวจจับการลาก
+  // เริ่มการตรวจจับการลาง
   const handleImageMouseDown = e => {
     if (isDragging) return;
 
@@ -405,6 +551,119 @@ export default function VillageMap() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // ตรวจสอบว่ากด Shift หรือไม่สำหรับการเลือกแบบกลุ่ม
+    if (e.shiftKey) {
+      // ล้างค่าที่เกี่ยวข้องกับการสร้าง zone
+      setMouseDownStart(null);
+      setMouseDownTime(null);
+      setHasDragged(false);
+      setIsSelectingZone(false);
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      
+      // เริ่ม group selection
+      setIsGroupSelecting(true);
+      setGroupSelectionStart({ x, y });
+      setGroupSelectionEnd({ x, y });
+      setSelectedMarkers([]);
+      setSelectedZones([]);
+      return;
+    }
+
+    // ตรวจสอบว่าคลิกที่ marker ที่เลือกไว้หรือไม่
+    const clickedMarker = markers.find(marker => {
+      const distance = Math.sqrt(Math.pow(marker.x - x, 2) + Math.pow(marker.y - y, 2));
+      return distance <= 15 && selectedMarkers.includes(marker.id);
+    });
+
+    // ตรวจสอบว่าคลิกที่ zone ที่เลือกไว้หรือไม่
+    const clickedZone = zones.find(zone => {
+      return isPointInZone(x, y, zone) && selectedZones.includes(zone.id);
+    });
+
+    // ถ้ามีทั้ง markers และ zones ที่เลือกไว้ ให้ใช้การลางแบบผสม
+    if ((clickedMarker || clickedZone) && selectedMarkers.length > 0 && selectedZones.length > 0) {
+      // บันทึก original positions สำหรับทั้ง markers และ zones
+      setMarkers(prevMarkers =>
+        prevMarkers.map(marker => {
+          if (selectedMarkers.includes(marker.id)) {
+            return { ...marker, originalX: marker.x, originalY: marker.y };
+          }
+          return marker;
+        })
+      );
+      
+      setZones(prevZones =>
+        prevZones.map(zone => {
+          if (selectedZones.includes(zone.id)) {
+            return { ...zone, originalX: zone.x, originalY: zone.y };
+          }
+          return zone;
+        })
+      );
+      
+      setIsDraggingMixed(true);
+      
+      // เก็บ reference point และ offset
+      const referencePoint = clickedMarker 
+        ? { x: clickedMarker.x, y: clickedMarker.y, type: 'marker', id: clickedMarker.id }
+        : { x: clickedZone.x, y: clickedZone.y, type: 'zone', id: clickedZone.id };
+        
+      setDragReference(referencePoint);
+      setGroupDragOffset({ 
+        x: x - referencePoint.x, 
+        y: y - referencePoint.y 
+      });
+      return;
+    }
+
+    // ถ้าเลือกเฉพาะ markers
+    if (clickedMarker && selectedMarkers.length > 0 && selectedZones.length === 0) {
+      // บันทึก original positions ก่อนเริ่มลาก
+      setMarkers(prevMarkers =>
+        prevMarkers.map(marker => {
+          if (selectedMarkers.includes(marker.id)) {
+            return { ...marker, originalX: marker.x, originalY: marker.y };
+          }
+          return marker;
+        })
+      );
+      
+      setIsDraggingGroup(true);
+      setGroupDragOffset({ 
+        x: x - clickedMarker.x, 
+        y: y - clickedMarker.y 
+      });
+      return;
+    }
+
+    // ถ้าเลือกเฉพาะ zones
+    if (clickedZone && selectedZones.length > 0 && selectedMarkers.length === 0) {
+      // บันทึก original positions ก่อนเริ่มลาก zones
+      setZones(prevZones =>
+        prevZones.map(zone => {
+          if (selectedZones.includes(zone.id)) {
+            return { ...zone, originalX: zone.x, originalY: zone.y };
+          }
+          return zone;
+        })
+      );
+      
+      setIsDraggingZoneGroup(true);
+      setGroupDragOffset({ 
+        x: x - clickedZone.x, 
+        y: y - clickedZone.y 
+      });
+      return;
+    }
+
+    // ล้างการเลือกถ้าคลิกที่พื้นที่ว่าง
+    if (selectedMarkers.length > 0 || selectedZones.length > 0) {
+      setSelectedMarkers([]);
+      setSelectedZones([]);
+    }
+
+    // ตั้งค่า mouseDownStart เฉพาะถ้าไม่ได้ทำ group selection
     setMouseDownStart({ x, y });
     setMouseDownTime(Date.now());
     setHasDragged(false);
@@ -507,9 +766,73 @@ export default function VillageMap() {
     e.preventDefault();
     e.stopPropagation();
 
+    // ป้องกันการลากถ้ากำลังทำ group selection
+    if (isGroupSelecting) {
+      return;
+    }
+
     const rect = imageRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
+    // ตรวจสอบว่า zone นี้อยู่ในกลุ่มที่เลือกหรือไม่ และไม่มี handle
+    if (selectedZones.includes(zone.id) && selectedZones.length > 0 && !handle) {
+      // ถ้ามีทั้ง markers และ zones ที่เลือกไว้ ให้ใช้การลากแบบผสม
+      if (selectedMarkers.length > 0) {
+        // บันทึก original positions สำหรับทั้ง markers และ zones
+        setMarkers(prevMarkers =>
+          prevMarkers.map(marker => {
+            if (selectedMarkers.includes(marker.id)) {
+              return { ...marker, originalX: marker.x, originalY: marker.y };
+            }
+            return marker;
+          })
+        );
+        
+        setZones(prevZones =>
+          prevZones.map(z => {
+            if (selectedZones.includes(z.id)) {
+              return { ...z, originalX: z.x, originalY: z.y };
+            }
+            return z;
+          })
+        );
+        
+        setIsDraggingMixed(true);
+        
+        // เก็บ reference point และ offset
+        const referencePoint = { x: zone.x, y: zone.y, type: 'zone', id: zone.id };
+        setDragReference(referencePoint);
+        setGroupDragOffset({ 
+          x: mouseX - zone.x, 
+          y: mouseY - zone.y 
+        });
+        return;
+      }
+      
+      // ถ้าเลือกเฉพาะ zones
+      setZones(prevZones =>
+        prevZones.map(z => {
+          if (selectedZones.includes(z.id)) {
+            return { ...z, originalX: z.x, originalY: z.y };
+          }
+          return z;
+        })
+      );
+      
+      setIsDraggingZoneGroup(true);
+      setGroupDragOffset({ 
+        x: mouseX - zone.x, 
+        y: mouseY - zone.y 
+      });
+      return;
+    }
+
+    // ล้างการเลือกเก่าถ้าคลิกที่ zone ที่ไม่ได้เลือก
+    if (selectedZones.length > 0 && !selectedZones.includes(zone.id)) {
+      setSelectedZones([]);
+      setSelectedMarkers([]);
+    }
 
     if (handle === "rotate") {
       setIsRotatingZone(true);
@@ -689,15 +1012,15 @@ export default function VillageMap() {
       return;
     }
 
-    // จัดการการเลือกกลุ่มใหม่
-    if (mouseDownStart) {
+    // จัดการการเลือกกลุ่มใหม่ (สร้าง zone) - แต่ไม่ให้ทำถ้ากำลัง group selecting
+    if (mouseDownStart && !isGroupSelecting) {
       const rect = imageRef.current.getBoundingClientRect();
       const currentX = e.clientX - rect.left;
       const currentY = e.clientY - rect.top;
 
       const distance = getDistance(mouseDownStart, { x: currentX, y: currentY });
 
-      if (distance >= DRAG_THRESHOLD && !isSelectingZone) {
+      if (distance >= DRAG_THRESHOLD && !isSelectingZone && !isGroupSelecting) {
         setIsSelectingZone(true);
         setSelectionStart(mouseDownStart);
         setHasDragged(true);
@@ -709,10 +1032,298 @@ export default function VillageMap() {
         setSelectionEnd({ x, y });
       }
     }
+
+    // จัดการการเลือกแบบกลุ่ม
+    if (isGroupSelecting && groupSelectionStart) {
+      setGroupSelectionEnd({ x: mouseX, y: mouseY });
+      
+      // หา markers ที่อยู่ในพื้นที่เลือก
+      const markersInSelection = markers.filter(marker =>
+        isMarkerInSelection(marker, groupSelectionStart, { x: mouseX, y: mouseY })
+      ).map(marker => marker.id);
+      
+      // หา zones ที่อยู่ในพื้นที่เลือก
+      const zonesInSelection = zones.filter(zone =>
+        isZoneInSelection(zone, groupSelectionStart, { x: mouseX, y: mouseY })
+      ).map(zone => zone.id);
+      
+      setSelectedMarkers(markersInSelection);
+      setSelectedZones(zonesInSelection);
+      return;
+    }
+
+    // จัดการการลากกลุ่ม
+    if (isDraggingGroup && selectedMarkers.length > 0) {
+      // คำนวณตำแหน่งใหม่จากตำแหน่ง mouse ปัจจุบัน
+      const newX = mouseX - groupDragOffset.x;
+      const newY = mouseY - groupDragOffset.y;
+      
+      // หา marker หลักที่ใช้เป็นจุดอ้างอิง (marker ตัวแรกที่ถูกเลือก)
+      const referenceMarker = markers.find(m => selectedMarkers.includes(m.id));
+      if (referenceMarker) {
+        // คำนวณการเปลี่ยนแปลงตำแหน่งจาก reference marker
+        const offsetX = newX - referenceMarker.x;
+        const offsetY = newY - referenceMarker.y;
+        
+        setMarkers(prevMarkers =>
+          prevMarkers.map(marker => {
+            if (selectedMarkers.includes(marker.id)) {
+              const newMarkerX = Math.max(0, Math.min(marker.x + offsetX, rect.width));
+              const newMarkerY = Math.max(0, Math.min(marker.y + offsetY, rect.height));
+              return { ...marker, x: newMarkerX, y: newMarkerY };
+            }
+            return marker;
+          })
+        );
+      }
+      return;
+    }
+
+    // จัดการการลากแบบผสม (markers และ zones พร้อมกัน)
+    if (isDraggingMixed && dragReference && (selectedMarkers.length > 0 || selectedZones.length > 0)) {
+      // คำนวณตำแหน่งใหม่ของจุดอ้างอิงจาก mouse position
+      const newReferenceX = mouseX - groupDragOffset.x;
+      const newReferenceY = mouseY - groupDragOffset.y;
+      
+      // คำนวณ offset จากตำแหน่งเดิมของจุดอ้างอิง
+      const offsetX = newReferenceX - dragReference.x;
+      const offsetY = newReferenceY - dragReference.y;
+      
+      // อัพเดท markers
+      if (selectedMarkers.length > 0) {
+        setMarkers(prevMarkers =>
+          prevMarkers.map(marker => {
+            if (selectedMarkers.includes(marker.id)) {
+              const originalX = marker.originalX || marker.x;
+              const originalY = marker.originalY || marker.y;
+              const newMarkerX = Math.max(0, Math.min(originalX + offsetX, rect.width));
+              const newMarkerY = Math.max(0, Math.min(originalY + offsetY, rect.height));
+              return { ...marker, x: newMarkerX, y: newMarkerY };
+            }
+            return marker;
+          })
+        );
+      }
+      
+      // อัพเดท zones
+      if (selectedZones.length > 0) {
+        setZones(prevZones =>
+          prevZones.map(zone => {
+            if (selectedZones.includes(zone.id)) {
+              const originalX = zone.originalX || zone.x;
+              const originalY = zone.originalY || zone.y;
+              const newZoneX = Math.max(0, Math.min(originalX + offsetX, rect.width - zone.width));
+              const newZoneY = Math.max(0, Math.min(originalY + offsetY, rect.height - zone.height));
+              return { ...zone, x: newZoneX, y: newZoneY };
+            }
+            return zone;
+          })
+        );
+      }
+      return;
+    }
+
+    // จัดการการลากกลุ่ม zones
+    if (isDraggingZoneGroup && selectedZones.length > 0) {
+      // คำนวณตำแหน่งใหม่จากตำแหน่ง mouse ปัจจุบัน
+      const newX = mouseX - groupDragOffset.x;
+      const newY = mouseY - groupDragOffset.y;
+      
+      // หา zone หลักที่ใช้เป็นจุดอ้างอิง (zone ตัวแรกที่ถูกเลือก)
+      const referenceZone = zones.find(z => selectedZones.includes(z.id));
+      if (referenceZone) {
+        // คำนวณการเปลี่ยนแปลงตำแหน่งจาก reference zone
+        const offsetX = newX - referenceZone.x;
+        const offsetY = newY - referenceZone.y;
+        
+        setZones(prevZones =>
+          prevZones.map(zone => {
+            if (selectedZones.includes(zone.id)) {
+              const newZoneX = Math.max(0, Math.min(zone.x + offsetX, rect.width - zone.width));
+              const newZoneY = Math.max(0, Math.min(zone.y + offsetY, rect.height - zone.height));
+              return { ...zone, x: newZoneX, y: newZoneY };
+            }
+            return zone;
+          })
+        );
+      }
+      return;
+    }
+
+    if (isRotatingZone && draggedZone) {
+      const center = {
+        x: draggedZone.x + draggedZone.width / 2,
+        y: draggedZone.y + draggedZone.height / 2
+      };
+      const currentAngle = calculateAngle(center, { x: mouseX, y: mouseY }) - rotationStartAngle;
+
+      setZones(prevZones => prevZones.map(zone => (zone.id === draggedZone.id ? { ...zone, rotation: currentAngle } : zone)));
+      return;
+    }
   };
 
   // อัพเดทการจัดการ mouse up
   const handleMouseUp = () => {
+    // จัดการการเลือกแบบกลุ่ม
+    if (isGroupSelecting) {
+      setIsGroupSelecting(false);
+      setGroupSelectionStart(null);
+      setGroupSelectionEnd(null);
+      // ล้างค่าที่เกี่ยวข้องกับการสร้าง zone เพื่อป้องกันการแสดง modal
+      setIsSelectingZone(false);
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      setHasDragged(false);
+      // ตั้งค่าเพื่อป้องกันการเปิด popup ทันทีหลังจาก group selection
+      setJustFinishedGroupSelection(true);
+      setTimeout(() => setJustFinishedGroupSelection(false), 100);
+      return;
+    }
+
+    // จัดการการลากกลุ่ม
+    if (isDraggingGroup && selectedMarkers.length > 0) {
+      // บันทึกประวัติการเคลื่อนย้ายกลุ่ม
+      const movedMarkers = markers.filter(m => selectedMarkers.includes(m.id));
+      const originalPositions = movedMarkers.map(m => ({
+        id: m.id,
+        originalX: m.originalX,
+        originalY: m.originalY,
+        currentX: m.x,
+        currentY: m.y
+      }));
+
+      // บันทึกประวัติการเคลื่อนย้ายเฉพาะถ้ามีการเปลี่ยนแปลงตำแหน่ง
+      const hasPositionChanged = originalPositions.some(p => 
+        p.originalX !== p.currentX || p.originalY !== p.currentY
+      );
+
+      if (hasPositionChanged) {
+        addToHistory(ACTION_TYPES.MOVE_GROUP, {
+          markers: originalPositions
+        });
+
+        // อัพเดทกลุ่มของ markers หลังจากลาก
+        setMarkers(prevMarkers =>
+          prevMarkers.map(marker => {
+            if (selectedMarkers.includes(marker.id)) {
+              const newZone = zones.find(zone => isPointInZone(marker.x, marker.y, zone));
+              return { 
+                ...marker, 
+                group: newZone ? newZone.name : "Marker"
+              };
+            }
+            return marker;
+          })
+        );
+      }
+
+      setIsDraggingGroup(false);
+      setGroupDragOffset({ x: 0, y: 0 });
+      setDragReference(null);
+      return;
+    }
+
+    // จัดการการลากแบบผสม
+    if (isDraggingMixed && (selectedMarkers.length > 0 || selectedZones.length > 0)) {
+      let hasPositionChanged = false;
+      const historyData = {};
+
+      // จัดการ markers
+      if (selectedMarkers.length > 0) {
+        const movedMarkers = markers.filter(m => selectedMarkers.includes(m.id));
+        const markerPositions = movedMarkers.map(m => ({
+          id: m.id,
+          originalX: m.originalX,
+          originalY: m.originalY,
+          currentX: m.x,
+          currentY: m.y
+        }));
+
+        const markerChanged = markerPositions.some(p => 
+          p.originalX !== p.currentX || p.originalY !== p.currentY
+        );
+
+        if (markerChanged) {
+          hasPositionChanged = true;
+          historyData.markers = markerPositions;
+
+          // อัพเดทกลุ่มของ markers หลังจากลาก
+          setMarkers(prevMarkers =>
+            prevMarkers.map(marker => {
+              if (selectedMarkers.includes(marker.id)) {
+                const newZone = zones.find(zone => isPointInZone(marker.x, marker.y, zone));
+                return { 
+                  ...marker, 
+                  group: newZone ? newZone.name : "Marker"
+                };
+              }
+              return marker;
+            })
+          );
+        }
+      }
+
+      // จัดการ zones
+      if (selectedZones.length > 0) {
+        const movedZones = zones.filter(z => selectedZones.includes(z.id));
+        const zonePositions = movedZones.map(z => ({
+          id: z.id,
+          originalX: z.originalX,
+          originalY: z.originalY,
+          currentX: z.x,
+          currentY: z.y
+        }));
+
+        const zoneChanged = zonePositions.some(p => 
+          p.originalX !== p.currentX || p.originalY !== p.currentY
+        );
+
+        if (zoneChanged) {
+          hasPositionChanged = true;
+          historyData.zones = zonePositions;
+        }
+      }
+
+      // บันทึกประวัติถ้ามีการเปลี่ยนแปลง
+      if (hasPositionChanged) {
+        addToHistory(ACTION_TYPES.MOVE_MIXED_GROUP, historyData);
+      }
+
+      setIsDraggingMixed(false);
+      setGroupDragOffset({ x: 0, y: 0 });
+      setDragReference(null);
+      return;
+    }
+
+    // จัดการการลากกลุ่ม zones
+    if (isDraggingZoneGroup && selectedZones.length > 0) {
+      // บันทึกประวัติการเคลื่อนย้ายกลุ่ม zones
+      const movedZones = zones.filter(z => selectedZones.includes(z.id));
+      const originalPositions = movedZones.map(z => ({
+        id: z.id,
+        originalX: z.originalX,
+        originalY: z.originalY,
+        currentX: z.x,
+        currentY: z.y
+      }));
+
+      // บันทึกประวัติการเคลื่อนย้ายเฉพาะถ้ามีการเปลี่ยนแปลงตำแหน่ง
+      const hasPositionChanged = originalPositions.some(p => 
+        p.originalX !== p.currentX || p.originalY !== p.currentY
+      );
+
+      if (hasPositionChanged) {
+        addToHistory(ACTION_TYPES.MOVE_ZONE_GROUP, {
+          zones: originalPositions
+        });
+      }
+
+      setIsDraggingZoneGroup(false);
+      setGroupDragOffset({ x: 0, y: 0 });
+      setDragReference(null);
+      return;
+    }
+
     if (isDraggingZone || isResizingZone || isRotatingZone) {
       // บันทึกประวัติการเปลี่ยนแปลงของ zone
       if (draggedZone && originalZoneState) {
@@ -763,7 +1374,7 @@ export default function VillageMap() {
       setIsDragging(false);
     }
 
-    if (isSelectingZone && selectionStart && selectionEnd && hasDragged) {
+    if (isSelectingZone && selectionStart && selectionEnd && hasDragged && !isGroupSelecting) {
       const distance = getDistance(selectionStart, selectionEnd);
 
       if (distance >= DRAG_THRESHOLD) {
@@ -781,6 +1392,7 @@ export default function VillageMap() {
       setSelectionEnd(null);
     }
 
+    // ล้างค่าต่างๆ
     setMouseDownStart(null);
     setMouseDownTime(null);
 
@@ -951,28 +1563,42 @@ export default function VillageMap() {
     const size = isEditing ? displayMarker.size : markerSizes[displayMarker.id] || DEFAULT_MARKER_SIZE;
     const sizeInPixels = size * (isOnMap ? 4 : 3);
     const markerColor = colorMap[displayMarker.color] || colorMap.red;
+    const isSelected = selectedMarkers.includes(displayMarker.id);
 
     if (isOnMap) {
       return (
         <div
-          className="absolute transform -translate-x-1/2 -translate-y-1/2 group cursor-pointer"
+          className={`absolute transform -translate-x-1/2 -translate-y-1/2 group ${
+            isSelected && selectedMarkers.length > 1 ? 'cursor-move' : 'cursor-pointer'
+          }`}
           style={{
             left: displayMarker.x,
             top: displayMarker.y,
-            zIndex: draggedMarker?.id === displayMarker.id ? 1000 : 10
+            zIndex: draggedMarker?.id === displayMarker.id || isDraggingGroup ? 1000 : 10
           }}
           onDoubleClick={e => handleMarkerDoubleClick(e, marker)}
           onMouseDown={e => handleMarkerMouseDown(e, marker)}
         >
           <div className={`relative ${draggedMarker?.id === displayMarker.id ? "scale-110" : ""}`}>
             <div
-              className={`rounded-full transition-all duration-200`}
+              className={`rounded-full transition-all duration-200 ${isSelected ? 'ring-4 ring-blue-400 ring-opacity-75' : ''}`}
               style={{
                 width: `${sizeInPixels}px`,
                 height: `${sizeInPixels}px`,
                 backgroundColor: markerColor
               }}
             />
+            {isSelected && (
+              <div 
+                className="absolute inset-0 border-2 border-blue-500 border-dashed rounded-full animate-pulse"
+                style={{
+                  width: `${sizeInPixels + 8}px`,
+                  height: `${sizeInPixels + 8}px`,
+                  left: '-4px',
+                  top: '-4px'
+                }}
+              />
+            )}
           </div>
           {/* Tooltip */}
           <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
@@ -1029,6 +1655,7 @@ export default function VillageMap() {
     const displayZone = editZoneData?.id === zone.id ? editZoneData : zone;
     const zoneColors = getZoneColors(displayZone.color);
     const isBeingDragged = draggedZone?.id === zone.id;
+    const isSelected = selectedZones.includes(zone.id);
 
     // สร้างจุดจับสำหรับปรับขนาด
     const resizeHandles = [
@@ -1045,16 +1672,23 @@ export default function VillageMap() {
     return (
       <div
         key={zone.id}
-        className={`absolute ${zoneColors.bgOpacity} ${zoneColors.border} border-2 border-dashed 
-          ${isBeingDragged ? "opacity-80" : "opacity-60"} transition-opacity cursor-move group`}
+        className={`absolute ${zoneColors.bgOpacity} ${zoneColors.border} border-2 
+          ${isSelected ? 'border-solid border-blue-500' : 'border-dashed'} 
+          ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
+          transition-opacity cursor-move group
+          ${isSelected && selectedZones.length > 1 ? 'cursor-move' : ''}`}
         style={{
           left: zone.x,
           top: zone.y,
           width: zone.width,
           height: zone.height,
-          zIndex: isBeingDragged ? 1000 : 5,
+          zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
           transform: `rotate(${zone.rotation || 0}deg)`,
-          transformOrigin: "center"
+          transformOrigin: "center",
+          ...(isSelected && { 
+            boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.3)',
+            borderWidth: '3px'
+          })
         }}
         onMouseDown={e => handleZoneMouseDown(e, zone)}
         onDoubleClick={e => handleZoneDoubleClick(e, zone)}
@@ -1156,6 +1790,41 @@ export default function VillageMap() {
     initializeComponent();
   }, []);
 
+  // เพิ่มฟังก์ชันยกเลิกการเลือก
+  const clearSelection = () => {
+    setSelectedMarkers([]);
+    setSelectedZones([]);
+    setIsGroupSelecting(false);
+    setGroupSelectionStart(null);
+    setGroupSelectionEnd(null);
+    setJustFinishedGroupSelection(false);
+    setDragReference(null);
+  };
+
+  // เพิ่มฟังก์ชันตรวจสอบว่า marker อยู่ในพื้นที่เลือกหรือไม่
+  const isMarkerInSelection = (marker, selectionStart, selectionEnd) => {
+    const minX = Math.min(selectionStart.x, selectionEnd.x);
+    const maxX = Math.max(selectionStart.x, selectionEnd.x);
+    const minY = Math.min(selectionStart.y, selectionEnd.y);
+    const maxY = Math.max(selectionStart.y, selectionEnd.y);
+    
+    return marker.x >= minX && marker.x <= maxX && marker.y >= minY && marker.y <= maxY;
+  };
+
+  // เพิ่มฟังก์ชันตรวจสอบว่า zone อยู่ในพื้นที่เลือกหรือไม่
+  const isZoneInSelection = (zone, selectionStart, selectionEnd) => {
+    const minX = Math.min(selectionStart.x, selectionEnd.x);
+    const maxX = Math.max(selectionStart.x, selectionEnd.x);
+    const minY = Math.min(selectionStart.y, selectionEnd.y);
+    const maxY = Math.max(selectionStart.y, selectionEnd.y);
+    
+    // ตรวจสอบว่าจุดกึ่งกลางของ zone อยู่ในพื้นที่เลือกหรือไม่
+    const zoneCenterX = zone.x + zone.width / 2;
+    const zoneCenterY = zone.y + zone.height / 2;
+    
+    return zoneCenterX >= minX && zoneCenterX <= maxX && zoneCenterY >= minY && zoneCenterY <= maxY;
+  };
+
   return (
     <div className="relative w-full max-w-4xl mx-auto">
       {isLoading ? (
@@ -1238,6 +1907,19 @@ export default function VillageMap() {
                   />
                 )}
 
+              {/* แสดงพื้นที่เลือกแบบกลุ่ม */}
+              {isGroupSelecting && groupSelectionStart && groupSelectionEnd && (
+                <div
+                  className="absolute bg-green-200 border-2 border-green-500 border-dashed opacity-50 pointer-events-none"
+                  style={{
+                    left: Math.min(groupSelectionStart.x, groupSelectionEnd.x),
+                    top: Math.min(groupSelectionStart.y, groupSelectionEnd.y),
+                    width: Math.abs(groupSelectionEnd.x - groupSelectionStart.x),
+                    height: Math.abs(groupSelectionEnd.y - groupSelectionStart.y)
+                  }}
+                />
+              )}
+
               {/* Markers */}
               {markers.map(marker => renderMarker(marker, true))}
             </div>
@@ -1253,10 +1935,42 @@ export default function VillageMap() {
                   • <span className="font-semibold">กดค้างแล้วลาก</span> เพื่อสร้างกลุ่มใหม่
                 </li>
                 <li>• ลากจุดสีเพื่อย้ายตำแหน่ง</li>
+                <li>
+                  • <span className="font-semibold">Shift+ลาก</span> เพื่อเลือกหลาย markers และ zones
+                </li>
+                <li>
+                  • <span className="font-semibold">คลิกที่ marker/zone ที่เลือกแล้วลาก</span> เพื่อย้ายทั้งกลุ่มพร้อมกัน
+                </li>
                 <li>• ลาก marker เข้าไปในกลุ่มเพื่อเปลี่ยนกลุ่มอัตโนมัติ</li>
+                <li>• กด ESC เพื่อยกเลิกการเลือก</li>
+                <li>• กด Ctrl+Z เพื่อ Undo การกระทำ</li>
                 <li>• ใช้ปุ่ม แสดง/ซ่อน เพื่อจัดการการแสดงผลกลุ่ม</li>
               </ul>
             </div>
+
+            {/* แสดงข้อมูลการเลือก */}
+            {(selectedMarkers.length > 0 || selectedZones.length > 0) && (
+              <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
+                <div className="font-medium">
+                  เลือกแล้ว: {selectedMarkers.length} markers
+                  {selectedZones.length > 0 && `, ${selectedZones.length} zones`}
+                </div>
+                <div className="text-xs mt-1">
+                  {isDraggingGroup 
+                    ? "กำลังลากกลุ่ม markers..." 
+                    : isDraggingZoneGroup
+                    ? "กำลังลากกลุ่ม zones..."
+                    : isDraggingMixed
+                    ? "กำลังลากกลุ่มผสม (markers และ zones)..."
+                    : selectedMarkers.length > 0 && selectedZones.length > 0
+                    ? "คลิกที่ marker หรือ zone ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่มพร้อมกัน"
+                    : selectedMarkers.length > 0
+                    ? "คลิกที่ marker ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"
+                    : "คลิกที่ zone ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"
+                  }
+                </div>
+              </div>
+            )}
           </div>
 
           {/* รายการกลุ่มด้านขวา */}

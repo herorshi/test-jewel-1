@@ -1,6 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
+// เพิ่ม type สำหรับ action history
+const ACTION_TYPES = {
+  ADD_MARKER: 'ADD_MARKER',
+  REMOVE_MARKER: 'REMOVE_MARKER',
+  MOVE_MARKER: 'MOVE_MARKER',
+  RESET_MARKER: 'RESET_MARKER',
+  ADD_ZONE: 'ADD_ZONE',
+  REMOVE_ZONE: 'REMOVE_ZONE',
+  EDIT_MARKER: 'EDIT_MARKER',
+  EDIT_ZONE: 'EDIT_ZONE'
+};
+
 export default function VillageMap() {
   const [markers, setMarkers] = useState([]);
   const [zones, setZones] = useState([]);
@@ -37,6 +49,12 @@ export default function VillageMap() {
   const [showEditZoneModal, setShowEditZoneModal] = useState(false);
   const [editZoneData, setEditZoneData] = useState(null);
   const [originalZoneData, setOriginalZoneData] = useState(null);
+  // เพิ่ม state สำหรับเก็บประวัติการกระทำ
+  const [history, setHistory] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(-1);
+  // เพิ่ม state สำหรับเก็บประวัติการเคลื่อนไหว
+  const [moveHistory, setMoveHistory] = useState([]);
+  const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
 
   // สีและชื่อสี
   const colorOptions = [
@@ -142,10 +160,89 @@ export default function VillageMap() {
     });
   };
 
-  // จัดการการส่งฟอร์ม marker
+  // เพิ่มฟังก์ชันสำหรับเพิ่มประวัติการกระทำ
+  const addToHistory = (actionType, data) => {
+    const newAction = {
+      type: actionType,
+      data: data,
+      timestamp: Date.now()
+    };
+    
+    // ตัดประวัติที่อยู่หลังตำแหน่งปัจจุบันออก
+    const newHistory = history.slice(0, currentIndex + 1);
+    
+    setHistory([...newHistory, newAction]);
+    setCurrentIndex(currentIndex + 1);
+  };
+
+  // เพิ่มฟังก์ชัน undo
+  const undo = () => {
+    if (currentIndex >= 0) {
+      const action = history[currentIndex];
+      
+      switch (action.type) {
+        case ACTION_TYPES.ADD_MARKER:
+          setMarkers(markers.filter(m => m.id !== action.data.id));
+          break;
+        case ACTION_TYPES.REMOVE_MARKER:
+          setMarkers([...markers, action.data]);
+          break;
+        case ACTION_TYPES.MOVE_MARKER:
+          setMarkers(markers.map(m => 
+            m.id === action.data.id 
+              ? { ...m, x: action.data.previousX, y: action.data.previousY }
+              : m
+          ));
+          break;
+        case ACTION_TYPES.RESET_MARKER:
+          setMarkers(markers.map(m =>
+            m.id === action.data.id
+              ? { ...m, x: action.data.x, y: action.data.y }
+              : m
+          ));
+          break;
+        case ACTION_TYPES.ADD_ZONE:
+          setZones(zones.filter(z => z.id !== action.data.id));
+          break;
+        case ACTION_TYPES.REMOVE_ZONE:
+          setZones([...zones, action.data]);
+          break;
+        case ACTION_TYPES.EDIT_ZONE:
+          setZones(zones.map(z =>
+            z.id === action.data.id
+              ? { ...z, ...action.data.previous }
+              : z
+          ));
+          break;
+        case ACTION_TYPES.EDIT_MARKER:
+          setMarkers(markers.map(m =>
+            m.id === action.data.id
+              ? { ...m, ...action.data.previous }
+              : m
+          ));
+          break;
+      }
+      
+      setCurrentIndex(currentIndex - 1);
+    }
+  };
+
+  // เพิ่ม event listener สำหรับ keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, history]);
+
+  // อัพเดทฟังก์ชันที่เกี่ยวข้องกับการเปลี่ยนแปลง state
   const handleSubmit = e => {
     e.preventDefault();
-
     if (formData.name) {
       const newMarker = {
         id: Date.now(),
@@ -157,17 +254,17 @@ export default function VillageMap() {
         group: formData.group,
         color: formData.color
       };
-
+      
       setMarkers([...markers, newMarker]);
+      addToHistory(ACTION_TYPES.ADD_MARKER, newMarker);
+      
       setShowPopup(false);
       setFormData({ name: "", group: "", color: "red" });
     }
   };
 
-  // จัดการการส่งฟอร์มกลุ่ม
   const handleZoneSubmit = e => {
     e.preventDefault();
-
     if (zoneFormData.name && currentSelection) {
       const newZone = {
         id: Date.now(),
@@ -179,34 +276,42 @@ export default function VillageMap() {
         height: Math.abs(currentSelection.endY - currentSelection.startY),
         rotation: 0
       };
-
+      
       setZones([...zones, newZone]);
+      addToHistory(ACTION_TYPES.ADD_ZONE, newZone);
+      
       setShowZoneModal(false);
       setZoneFormData({ name: "", color: "blue" });
       setVisibleZones({ ...visibleZones, [newZone.id]: true });
     }
   };
 
-  // ปิด popup
+  const removeMarker = markerId => {
+    const markerToRemove = markers.find(m => m.id === markerId);
+    if (markerToRemove) {
+      setMarkers(markers.filter(marker => marker.id !== markerId));
+      addToHistory(ACTION_TYPES.REMOVE_MARKER, markerToRemove);
+    }
+  };
+
+  const removeZone = zoneId => {
+    const zoneToRemove = zones.find(z => z.id === zoneId);
+    if (zoneToRemove) {
+      setZones(zones.filter(zone => zone.id !== zoneId));
+      addToHistory(ACTION_TYPES.REMOVE_ZONE, zoneToRemove);
+    }
+  };
+
+  // เพิ่มฟังก์ชันปิด popup กลับมา
   const closePopup = () => {
     setShowPopup(false);
     setFormData({ name: "", group: "", color: "red" });
   };
 
-  // ปิด zone modal
+  // เพิ่มฟังก์ชันปิด zone modal กลับมา
   const closeZoneModal = () => {
     setShowZoneModal(false);
     setZoneFormData({ name: "", color: "blue" });
-  };
-
-  // ลบ marker
-  const removeMarker = markerId => {
-    setMarkers(markers.filter(marker => marker.id !== markerId));
-  };
-
-  // ลบกลุ่ม
-  const removeZone = zoneId => {
-    setZones(zones.filter(zone => zone.id !== zoneId));
   };
 
   // reset marker กลับตำแหน่งเดิม
@@ -268,12 +373,23 @@ export default function VillageMap() {
     setMarkers(
       markers.map(marker => {
         if (marker.id === draggedMarker.id) {
+          const previousX = marker.x;
+          const previousY = marker.y;
+          
           const updatedMarker = { ...marker, x, y };
-          // หากลุ่มใหม่
           const zone = findMarkerZone(updatedMarker);
           if (zone) {
             updatedMarker.group = zone.name;
           }
+
+          addToHistory(ACTION_TYPES.MOVE_MARKER, {
+            id: marker.id,
+            previousX,
+            previousY,
+            x,
+            y
+          });
+          
           return updatedMarker;
         }
         return marker;
@@ -344,7 +460,14 @@ export default function VillageMap() {
   // บันทึกการแก้ไข marker
   const handleEditMarkerSubmit = e => {
     e.preventDefault();
-    if (editMarkerData) {
+    if (editMarkerData && originalMarkerData) {
+      // บันทึกประวัติการแก้ไข marker
+      addToHistory(ACTION_TYPES.EDIT_MARKER, {
+        id: editMarkerData.id,
+        previous: originalMarkerData,
+        current: editMarkerData
+      });
+
       setMarkers(prevMarkers =>
         prevMarkers.map(marker => {
           if (marker.id === editMarkerData.id) {
@@ -591,6 +714,29 @@ export default function VillageMap() {
   // อัพเดทการจัดการ mouse up
   const handleMouseUp = () => {
     if (isDraggingZone || isResizingZone || isRotatingZone) {
+      // บันทึกประวัติการเปลี่ยนแปลงของ zone
+      if (draggedZone && originalZoneState) {
+        const currentZone = zones.find(z => z.id === draggedZone.id);
+        if (currentZone) {
+          addToHistory(ACTION_TYPES.EDIT_ZONE, {
+            id: draggedZone.id,
+            previous: {
+              x: originalZoneState.initialX,
+              y: originalZoneState.initialY,
+              width: originalZoneState.initialWidth,
+              height: originalZoneState.initialHeight,
+              rotation: originalZoneState.rotation
+            },
+            current: {
+              x: currentZone.x,
+              y: currentZone.y,
+              width: currentZone.width,
+              height: currentZone.height,
+              rotation: currentZone.rotation
+            }
+          });
+        }
+      }
       setIsDraggingZone(false);
       setIsResizingZone(false);
       setIsRotatingZone(false);
@@ -964,7 +1110,14 @@ export default function VillageMap() {
   // บันทึกการแก้ไขกลุ่ม
   const handleEditZoneSubmit = e => {
     e.preventDefault();
-    if (editZoneData) {
+    if (editZoneData && originalZoneData) {
+      // บันทึกประวัติการแก้ไขกลุ่ม
+      addToHistory(ACTION_TYPES.EDIT_ZONE, {
+        id: editZoneData.id,
+        previous: originalZoneData,
+        current: editZoneData
+      });
+
       setZones(prevZones =>
         prevZones.map(zone =>
           zone.id === editZoneData.id ? { ...zone, name: editZoneData.name, color: editZoneData.color } : zone

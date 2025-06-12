@@ -28,6 +28,7 @@ export default function VillageMap() {
   const [editMarkerData, setEditMarkerData] = useState(null);
   const [originalMarkerData, setOriginalMarkerData] = useState(null);
   const [zoneFormData, setZoneFormData] = useState({ name: "", color: "blue" });
+  const [selectedZoneShape, setSelectedZoneShape] = useState("rectangle");
   const [draggedMarker, setDraggedMarker] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isSelectingZone, setIsSelectingZone] = useState(false);
@@ -99,6 +100,13 @@ export default function VillageMap() {
     { value: "amber", label: "อำพัน", bg: "bg-amber-500", border: "border-amber-500", bgOpacity: "bg-amber-200" }
   ];
 
+  // เพิ่มตัวเลือกรูปทรง zone
+  const zoneShapeOptions = [
+    { value: "rectangle", label: "", icon: "⬛" },
+    { value: "circle", label: "", icon: "🔵" },
+    { value: "triangle", label: "", icon: "🔺" }
+  ];
+
   // ระยะทางขั้นต่ำที่ถือว่าเป็นการลาก (pixels)
   const DRAG_THRESHOLD = 5;
 
@@ -109,7 +117,45 @@ export default function VillageMap() {
 
   // ตรวจสอบว่าจุดอยู่ในกลุ่มหรือไม่
   const isPointInZone = (x, y, zone) => {
-    return x >= zone.x && x <= zone.x + zone.width && y >= zone.y && y <= zone.y + zone.height;
+    const { shape = "rectangle", x: zx, y: zy, width, height } = zone;
+
+    switch (shape) {
+      case "circle":
+        // สำหรับวงกลม: ตรวจสอบระยะห่างจากจุดกึ่งกลาง
+        const centerX = zx + width / 2;
+        const centerY = zy + height / 2;
+        const radiusX = width / 2;
+        const radiusY = height / 2;
+        const dx = (x - centerX) / radiusX;
+        const dy = (y - centerY) / radiusY;
+        return dx * dx + dy * dy <= 1;
+
+      case "triangle":
+        // สำหรับสามเหลี่ยม: ใช้ point-in-triangle algorithm
+        const x1 = zx + width / 2; // จุดยอดบน
+        const y1 = zy;
+        const x2 = zx; // จุดซ้ายล่าง
+        const y2 = zy + height;
+        const x3 = zx + width; // จุดขวาล่าง
+        const y3 = zy + height;
+
+        const sign = (px, py, ax, ay, bx, by) => {
+          return (px - bx) * (ay - by) - (ax - bx) * (py - by);
+        };
+
+        const d1 = sign(x, y, x1, y1, x2, y2);
+        const d2 = sign(x, y, x2, y2, x3, y3);
+        const d3 = sign(x, y, x3, y3, x1, y1);
+
+        const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+        const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+
+        return !(hasNeg && hasPos);
+
+      default:
+        // rectangle
+        return x >= zx && x <= zx + width && y >= zy && y <= zy + height;
+    }
   };
 
   // หากลุ่มที่ marker อยู่
@@ -427,17 +473,20 @@ export default function VillageMap() {
   };
 
   // เพิ่ม useEffect สำหรับจัดการ wheel event บน container
-  useEffect(() => {
-    const container = containerRef.current;
-    if (container) {
-      // เพิ่ม passive: false เพื่อให้สามารถ preventDefault ได้
-      container.addEventListener("wheel", handleWheel, { passive: false });
+  useEffect(
+    () => {
+      const container = containerRef.current;
+      if (container) {
+        // เพิ่ม passive: false เพื่อให้สามารถ preventDefault ได้
+        container.addEventListener("wheel", handleWheel, { passive: false });
 
-      return () => {
-        container.removeEventListener("wheel", handleWheel);
-      };
-    }
-  }, []);
+        return () => {
+          container.removeEventListener("wheel", handleWheel);
+        };
+      }
+    },
+    [zoomLevel, panOffset]
+  );
 
   // เพิ่ม event listener สำหรับ keyboard shortcuts
   useEffect(
@@ -508,27 +557,34 @@ export default function VillageMap() {
     e.preventDefault();
 
     if (zoneFormData.name && currentSelection) {
-      // คำนวณขนาดของ zone ตามระดับ zoom
-      const adjustedStartX = Math.min(currentSelection.startX, currentSelection.endX);
-      const adjustedStartY = Math.min(currentSelection.startY, currentSelection.endY);
-      const adjustedWidth = Math.abs(currentSelection.endX - currentSelection.startX);
-      const adjustedHeight = Math.abs(currentSelection.endY - currentSelection.startY);
+      const x = Math.min(currentSelection.startX, currentSelection.endX);
+      const y = Math.min(currentSelection.startY, currentSelection.endY);
+      const width = Math.abs(currentSelection.endX - currentSelection.startX);
+      const height = Math.abs(currentSelection.endY - currentSelection.startY);
 
       const newZone = {
         id: Date.now(),
         name: zoneFormData.name,
         color: zoneFormData.color,
-        x: adjustedStartX,
-        y: adjustedStartY,
-        width: adjustedWidth,
-        height: adjustedHeight,
-        rotation: 0
+        shape: selectedZoneShape,
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        rotation: 0,
+        // บันทึกตำแหน่งเดิมสำหรับการรีเซ็ต
+        originalX: x,
+        originalY: y,
+        originalWidth: width,
+        originalHeight: height,
+        originalRotation: 0
       };
 
       setZones([...zones, newZone]);
       addToHistory(ACTION_TYPES.ADD_ZONE, newZone);
       setShowZoneModal(false);
       setZoneFormData({ name: "", color: "blue" });
+      // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
       setVisibleZones({ ...visibleZones, [newZone.id]: true });
     }
   };
@@ -559,6 +615,7 @@ export default function VillageMap() {
   const closeZoneModal = () => {
     setShowZoneModal(false);
     setZoneFormData({ name: "", color: "blue" });
+    // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
   };
 
   // reset marker กลับตำแหน่งเดิม
@@ -575,6 +632,46 @@ export default function VillageMap() {
           : marker
       )
     );
+  };
+
+  // เพิ่มฟังก์ชันรีเซ็ตตำแหน่ง zone
+  const resetZonePosition = zoneId => {
+    const zone = zones.find(z => z.id === zoneId);
+    if (zone && zone.originalX !== undefined && zone.originalY !== undefined) {
+      // บันทึกประวัติการเปลี่ยนแปลง
+      addToHistory(ACTION_TYPES.EDIT_ZONE, {
+        id: zoneId,
+        previous: {
+          x: zone.x,
+          y: zone.y,
+          width: zone.width,
+          height: zone.height,
+          rotation: zone.rotation || 0
+        },
+        current: {
+          x: zone.originalX,
+          y: zone.originalY,
+          width: zone.originalWidth || zone.width,
+          height: zone.originalHeight || zone.height,
+          rotation: zone.originalRotation || 0
+        }
+      });
+
+      setZones(prevZones =>
+        prevZones.map(z =>
+          z.id === zoneId
+            ? {
+                ...z,
+                x: z.originalX || z.x,
+                y: z.originalY || z.y,
+                width: z.originalWidth || z.width,
+                height: z.originalHeight || z.height,
+                rotation: z.originalRotation || 0
+              }
+            : z
+        )
+      );
+    }
   };
 
   // จัดการการ double click ที่ marker
@@ -1868,6 +1965,50 @@ export default function VillageMap() {
     const isBeingDragged = draggedZone?.id === zone.id;
     const isSelected = selectedZones.includes(zone.id);
 
+    // กำหนดรูปทรง CSS ตาม shape
+    const getShapeStyles = shape => {
+      const colorMapping = {
+        blue: "rgba(59, 130, 246, 0.3)",
+        purple: "rgba(147, 51, 234, 0.3)",
+        orange: "rgba(249, 115, 22, 0.3)",
+        emerald: "rgba(16, 185, 129, 0.3)",
+        rose: "rgba(244, 63, 94, 0.3)",
+        cyan: "rgba(6, 182, 212, 0.3)",
+        amber: "rgba(245, 158, 11, 0.3)"
+      };
+
+      // สีขอบที่ตรงกับสีของ zone
+      const borderColorMapping = {
+        blue: "#3B82F6",
+        purple: "#9333EA",
+        orange: "#F97316",
+        emerald: "#10B981",
+        rose: "#F43F5E",
+        cyan: "#06B6D4",
+        amber: "#F59E0B"
+      };
+
+      const currentBorderColor = isSelected ? "#3B82F6" : borderColorMapping[displayZone.color] || borderColorMapping.blue;
+
+      switch (shape) {
+        case "circle":
+          return {
+            borderRadius: "50%",
+            border: `2px ${isSelected ? "solid" : "dashed"} ${currentBorderColor}`
+          };
+        case "triangle":
+          return {
+            clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)",
+            backgroundColor: colorMapping[displayZone.color] || colorMapping["blue"]
+          };
+        default:
+          // rectangle
+          return {
+            border: `2px ${isSelected ? "solid" : "dashed"} ${currentBorderColor}`
+          };
+      }
+    };
+
     // สร้างจุดจับสำหรับปรับขนาด
     const resizeHandles = [
       { position: "nw", cursor: "nw-resize", style: { top: -5, left: -5 } },
@@ -1883,8 +2024,9 @@ export default function VillageMap() {
     return (
       <div
         key={zone.id}
-        className={`absolute ${zoneColors.bgOpacity} ${zoneColors.border} border-2 
-          ${isSelected ? "border-solid border-blue-500" : "border-dashed"} 
+        className={`absolute ${displayZone.shape !== "triangle" ? zoneColors.bgOpacity : ""} ${
+          displayZone.shape !== "triangle" ? zoneColors.border : ""
+        } 
           ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
           transition-opacity cursor-move group
           ${isSelected && selectedZones.length > 1 ? "cursor-move" : ""}`}
@@ -1896,36 +2038,101 @@ export default function VillageMap() {
           zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
           transform: `rotate(${zone.rotation || 0}deg)`,
           transformOrigin: "center",
+          ...getShapeStyles(displayZone.shape),
           ...(isSelected && {
             boxShadow: "0 0 0 3px rgba(59, 130, 246, 0.3)",
-            borderWidth: "3px"
+            ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
           })
         }}
         onMouseDown={e => handleZoneMouseDown(e, zone)}
         onDoubleClick={e => handleZoneDoubleClick(e, zone)}
       >
         <div
-          className="absolute top-1 left-1 bg-white bg-opacity-90 px-2 py-1 rounded font-medium text-gray-700"
-          style={{ fontSize: `${Math.max(10, 12 * zoomLevel)}px` }}
+          className={`absolute px-2 py-1 rounded font-medium ${
+            displayZone.shape === "triangle" ? "top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" : "top-1 left-1"
+          }`}
+          style={{
+            fontSize: `${Math.max(10, 12 * zoomLevel)}px`,
+            backgroundColor: (() => {
+              const colorMapping = {
+                blue: "rgba(59, 130, 246, 0.9)",
+                purple: "rgba(147, 51, 234, 0.9)",
+                orange: "rgba(249, 115, 22, 0.9)",
+                emerald: "rgba(16, 185, 129, 0.9)",
+                rose: "rgba(244, 63, 94, 0.9)",
+                cyan: "rgba(6, 182, 212, 0.9)",
+                amber: "rgba(245, 158, 11, 0.9)"
+              };
+              return colorMapping[displayZone.color] || colorMapping["blue"];
+            })(),
+            color: "white",
+            textShadow: "1px 1px 2px rgba(0,0,0,0.7)"
+          }}
         >
           {displayZone.name}
         </div>
 
+        {/* เส้นขอบสำหรับสามเหลี่ยม */}
+        {displayZone.shape === "triangle" && (
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            style={{ width: "100%", height: "100%" }}
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <polygon
+              points="50,0 0,100 100,100"
+              fill={(() => {
+                const colorMapping = {
+                  blue: "rgba(59, 130, 246, 0.3)",
+                  purple: "rgba(147, 51, 234, 0.3)",
+                  orange: "rgba(249, 115, 22, 0.3)",
+                  emerald: "rgba(16, 185, 129, 0.3)",
+                  rose: "rgba(244, 63, 94, 0.3)",
+                  cyan: "rgba(6, 182, 212, 0.3)",
+                  amber: "rgba(245, 158, 11, 0.3)"
+                };
+                return colorMapping[displayZone.color] || colorMapping["blue"];
+              })()}
+              stroke={
+                isSelected
+                  ? "#3B82F6"
+                  : {
+                      blue: "#3B82F6",
+                      purple: "#9333EA",
+                      orange: "#F97316",
+                      emerald: "#10B981",
+                      rose: "#F43F5E",
+                      cyan: "#06B6D4",
+                      amber: "#F59E0B"
+                    }[displayZone.color] || "#3B82F6"
+              }
+              strokeWidth="2"
+              strokeDasharray={isSelected ? "none" : "4,2"}
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        )}
+
         {/* จุดจับสำหรับหมุน */}
         <div
-          className="absolute left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-md 
+          className="absolute left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-xl border-2 border-gray-300
             flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-200"
           style={{
-            top: `-${32 * zoomLevel}px`,
-            width: `${24 * zoomLevel}px`,
-            height: `${24 * zoomLevel}px`
+            top: `-${Math.max(32, Math.min(48, 36 * zoomLevel))}px`,
+            width: `${Math.max(28, Math.min(40, 32 * zoomLevel))}px`,
+            height: `${Math.max(28, Math.min(40, 32 * zoomLevel))}px`,
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
           }}
           onMouseDown={e => handleZoneMouseDown(e, zone, "rotate")}
           title="หมุนพื้นที่"
         >
           <svg
             className="text-gray-600"
-            style={{ width: `${16 * zoomLevel}px`, height: `${16 * zoomLevel}px` }}
+            style={{
+              width: `${Math.max(16, Math.min(24, 20 * zoomLevel))}px`,
+              height: `${Math.max(16, Math.min(24, 20 * zoomLevel))}px`
+            }}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -1940,21 +2147,34 @@ export default function VillageMap() {
         </div>
 
         {/* จุดจับสำหรับปรับขนาด */}
-        {resizeHandles.map(handle => (
-          <div
-            key={handle.position}
-            className={`absolute bg-white border-2 ${zoneColors.border} rounded-full 
-              opacity-0 group-hover:opacity-100 transition-opacity duration-200`}
-            style={{
-              ...handle.style,
-              width: `${12 * zoomLevel}px`,
-              height: `${12 * zoomLevel}px`,
-              cursor: handle.cursor,
-              zIndex: 1001
-            }}
-            onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
-          />
-        ))}
+        {resizeHandles.map(handle => {
+          // คำนวณขนาดจุดจับที่เหมาะสม - ขนาดใหญ่ขึ้นและมองเห็นได้ชัดเจน
+          const baseSize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel) > 200 ? 20 : 16;
+          const handleSize = Math.max(baseSize, Math.min(24, 12 * zoomLevel + 8));
+          const handleOffset = handleSize / 2;
+
+          return (
+            <div
+              key={handle.position}
+              className={`absolute bg-white border-3 ${zoneColors.border} rounded-full 
+              opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl ring-1 ring-gray-300`}
+              style={{
+                ...handle.style,
+                // ปรับตำแหน่งให้ถูกต้องตามขนาดจุดจับ
+                ...(handle.style.top === -5 && { top: -handleOffset }),
+                ...(handle.style.bottom === -5 && { bottom: -handleOffset }),
+                ...(handle.style.left === -5 && { left: -handleOffset }),
+                ...(handle.style.right === -5 && { right: -handleOffset }),
+                width: `${handleSize}px`,
+                height: `${handleSize}px`,
+                cursor: handle.cursor,
+                zIndex: 1001,
+                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
+              }}
+              onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
+            />
+          );
+        })}
       </div>
     );
   };
@@ -2054,6 +2274,12 @@ export default function VillageMap() {
 
   // เพิ่มฟังก์ชันจัดการ zoom
   const handleWheel = e => {
+    // ตรวจสอบว่ากด Ctrl หรือ Cmd หรือไม่
+    if (!e.ctrlKey && !e.metaKey) {
+      // ถ้าไม่กด Ctrl ให้ปล่อยให้ scroll ปกติ
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -2109,7 +2335,7 @@ export default function VillageMap() {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              onWheel={preventPageScroll}
+              onWheel={handleWheel}
               style={{
                 cursor: isPanning ? "grabbing" : isCtrlPressed ? "grab" : "crosshair"
               }}
@@ -2154,39 +2380,124 @@ export default function VillageMap() {
 
               {/* แสดงพรีวิวกลุ่มขณะลาก */}
               {(isSelectingZone || (showZoneModal && currentSelection)) &&
-                ((isSelectingZone && selectionStart && selectionEnd) || (!isSelectingZone && currentSelection)) && (
-                  <div
-                    className="absolute bg-blue-200 border-2 border-blue-500 border-dashed opacity-50 pointer-events-none"
-                    style={{
-                      left:
-                        Math.min(
-                          isSelectingZone && selectionStart ? selectionStart.x : currentSelection.startX,
-                          isSelectingZone && selectionEnd ? selectionEnd.x : currentSelection.endX
-                        ) *
-                          zoomLevel +
-                        panOffset.x,
-                      top:
-                        Math.min(
-                          isSelectingZone && selectionStart ? selectionStart.y : currentSelection.startY,
-                          isSelectingZone && selectionEnd ? selectionEnd.y : currentSelection.endY
-                        ) *
-                          zoomLevel +
-                        panOffset.y,
-                      width:
-                        Math.abs(
-                          isSelectingZone && selectionStart && selectionEnd
-                            ? selectionEnd.x - selectionStart.x
-                            : currentSelection.endX - currentSelection.startX
-                        ) * zoomLevel,
-                      height:
-                        Math.abs(
-                          isSelectingZone && selectionStart && selectionEnd
-                            ? selectionEnd.y - selectionStart.y
-                            : currentSelection.endY - currentSelection.startY
-                        ) * zoomLevel
-                    }}
-                  />
-                )}
+                ((isSelectingZone && selectionStart && selectionEnd) || (!isSelectingZone && currentSelection)) &&
+                (() => {
+                  // กำหนดสีตาม zoneFormData.color
+                  const previewColors = {
+                    blue: { bg: "bg-blue-200", border: "border-blue-500" },
+                    purple: { bg: "bg-purple-200", border: "border-purple-500" },
+                    orange: { bg: "bg-orange-200", border: "border-orange-500" },
+                    emerald: { bg: "bg-emerald-200", border: "border-emerald-500" },
+                    rose: { bg: "bg-rose-200", border: "border-rose-500" },
+                    cyan: { bg: "bg-cyan-200", border: "border-cyan-500" },
+                    amber: { bg: "bg-amber-200", border: "border-amber-500" }
+                  };
+
+                  const currentColors = previewColors[zoneFormData.color] || previewColors.blue;
+
+                  const width =
+                    Math.abs(
+                      isSelectingZone && selectionStart && selectionEnd
+                        ? selectionEnd.x - selectionStart.x
+                        : currentSelection.endX - currentSelection.startX
+                    ) * zoomLevel;
+
+                  const height =
+                    Math.abs(
+                      isSelectingZone && selectionStart && selectionEnd
+                        ? selectionEnd.y - selectionStart.y
+                        : currentSelection.endY - currentSelection.startY
+                    ) * zoomLevel;
+
+                  const left =
+                    Math.min(
+                      isSelectingZone && selectionStart ? selectionStart.x : currentSelection.startX,
+                      isSelectingZone && selectionEnd ? selectionEnd.x : currentSelection.endX
+                    ) *
+                      zoomLevel +
+                    panOffset.x;
+
+                  const top =
+                    Math.min(
+                      isSelectingZone && selectionStart ? selectionStart.y : currentSelection.startY,
+                      isSelectingZone && selectionEnd ? selectionEnd.y : currentSelection.endY
+                    ) *
+                      zoomLevel +
+                    panOffset.y;
+
+                  // สีของเส้นขอบ
+                  const borderColor =
+                    {
+                      blue: "#3B82F6",
+                      purple: "#9333EA",
+                      orange: "#F97316",
+                      emerald: "#10B981",
+                      rose: "#F43F5E",
+                      cyan: "#06B6D4",
+                      amber: "#F59E0B"
+                    }[zoneFormData.color] || "#3B82F6";
+
+                  // สีพื้นหลัง
+                  const bgColor =
+                    {
+                      blue: "rgba(59, 130, 246, 0.3)",
+                      purple: "rgba(147, 51, 234, 0.3)",
+                      orange: "rgba(249, 115, 22, 0.3)",
+                      emerald: "rgba(16, 185, 129, 0.3)",
+                      rose: "rgba(244, 63, 94, 0.3)",
+                      cyan: "rgba(6, 182, 212, 0.3)",
+                      amber: "rgba(245, 158, 11, 0.3)"
+                    }[zoneFormData.color] || "rgba(59, 130, 246, 0.3)";
+
+                  return (
+                    <div
+                      className="absolute opacity-50 pointer-events-none"
+                      style={{
+                        left,
+                        top,
+                        width,
+                        height
+                      }}
+                    >
+                      {selectedZoneShape === "triangle" ? (
+                        <>
+                          {/* พื้นหลังสามเหลี่ยม */}
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)",
+                              backgroundColor: bgColor
+                            }}
+                          />
+                          {/* เส้นขอบสามเหลี่ยม */}
+                          <svg
+                            className="absolute inset-0"
+                            style={{ width: "100%", height: "100%" }}
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                          >
+                            <polygon
+                              points="50,0 0,100 100,100"
+                              fill="none"
+                              stroke={borderColor}
+                              strokeWidth="2"
+                              strokeDasharray="4,2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          </svg>
+                        </>
+                      ) : selectedZoneShape === "circle" ? (
+                        <div
+                          className={`${currentColors.bg} border-2 ${
+                            currentColors.border
+                          } border-dashed rounded-full w-full h-full`}
+                        />
+                      ) : (
+                        <div className={`${currentColors.bg} border-2 ${currentColors.border} border-dashed w-full h-full`} />
+                      )}
+                    </div>
+                  );
+                })()}
 
               {/* แสดงพื้นที่เลือกแบบกลุ่ม */}
               {isGroupSelecting && groupSelectionStart && groupSelectionEnd && (
@@ -2217,7 +2528,7 @@ export default function VillageMap() {
                 </li>
                 <li>• ลากจุดสีเพื่อย้ายตำแหน่ง</li>
                 <li>
-                  • <span className="font-semibold">Mouse wheel</span> เพื่อ Zoom in/out
+                  • <span className="font-semibold">Ctrl+Mouse wheel</span> เพื่อ Zoom in/out
                 </li>
                 <li>
                   • <span className="font-semibold">Ctrl+คลิกแล้วลาก</span> หรือ{" "}
@@ -2236,6 +2547,9 @@ export default function VillageMap() {
                 <li>• กด ESC เพื่อยกเลิกการเลือก</li>
                 <li>• กด Ctrl+Z เพื่อ Undo การกระทำ, Ctrl+Shift+Z เพื่อ Redo</li>
                 <li>• ใช้ปุ่ม แสดง/ซ่อน เพื่อจัดการการแสดงผลกลุ่ม</li>
+                <li>
+                  • <span className="font-semibold">เลือกรูปทรง</span> ก่อนลากเพื่อสร้างกลุ่มรูปทรงต่างๆ
+                </li>
               </ul>
             </div>
 
@@ -2273,29 +2587,56 @@ export default function VillageMap() {
                     </span>
                   )}
                 </div>
-                <div className="flex space-x-1">
+                <div className="flex space-x-2">
                   <button
                     onClick={undo}
                     disabled={currentIndex < 0}
-                    className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Undo (Ctrl+Z)"
+                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ย้อนกลับการกระทำ (Ctrl+Z)"
                   >
                     ↶
                   </button>
                   <button
                     onClick={redo}
                     disabled={currentIndex >= history.length - 1}
-                    className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Redo (Ctrl+Shift+Z)"
+                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ทำซ้ำการกระทำ (Ctrl+Shift+Z)"
                   >
                     ↷
                   </button>
                   <button
                     onClick={resetZoomAndPan}
-                    className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 transition-colors"
+                    className="w-8 h-8 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="รีเซ็ต Zoom และ Pan (Ctrl+0)"
                   >
-                    รีเซ็ต
+                    🏠
                   </button>
+                  <button
+                    onClick={clearSelection}
+                    className="w-8 h-8 bg-purple-500 text-white rounded-full text-sm hover:bg-purple-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ยกเลิกการเลือก (ESC)"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="mb-2">
+                <label className="block text-sm font-medium text-blue-800 mb-1">รูปทรงกลุ่ม:</label>
+                <div className="flex space-x-2">
+                  {zoneShapeOptions.map(shape => (
+                    <button
+                      key={shape.value}
+                      onClick={() => setSelectedZoneShape(shape.value)}
+                      className={`px-2 py-1 rounded text-xs transition-colors ${
+                        selectedZoneShape === shape.value
+                          ? "bg-blue-500 text-white"
+                          : "bg-white text-blue-700 hover:bg-blue-100"
+                      }`}
+                      title={shape.label}
+                    >
+                      {shape.icon} {shape.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
@@ -2524,6 +2865,26 @@ export default function VillageMap() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">รูปทรง:</label>
+                <div className="flex space-x-2">
+                  {zoneShapeOptions.map(shape => (
+                    <button
+                      key={shape.value}
+                      type="button"
+                      onClick={() => setSelectedZoneShape(shape.value)}
+                      className={`flex-1 py-1.5 px-2 text-xs rounded border transition-all duration-200 ${
+                        selectedZoneShape === shape.value
+                          ? "bg-blue-500 text-white border-blue-500"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-blue-300"
+                      }`}
+                    >
+                      {shape.icon} {shape.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">เลือกสีกลุ่ม:</label>
                 <div className="flex items-center justify-center space-x-4">
                   {zoneColorOptions.map(color => (
@@ -2552,8 +2913,16 @@ export default function VillageMap() {
                 </button>
                 <button
                   type="button"
-                  onClick={closeZoneModal}
-                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
+                  onClick={() => {
+                    setShowZoneModal(false);
+                    setZoneFormData({ name: "", color: "blue" });
+                    // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
+                    setCurrentSelection(null);
+                    setIsSelectingZone(false);
+                    setSelectionStart(null);
+                    setSelectionEnd(null);
+                  }}
+                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200 cursor-pointer"
                 >
                   ยกเลิก
                 </button>
@@ -2613,8 +2982,11 @@ export default function VillageMap() {
                 </button>
                 <button
                   type="button"
-                  onClick={closePopup}
-                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
+                  onClick={() => {
+                    setShowPopup(false);
+                    setFormData({ name: "", group: "", color: "red" });
+                  }}
+                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200 cursor-pointer"
                 >
                   ยกเลิก
                 </button>
@@ -2709,30 +3081,78 @@ export default function VillageMap() {
                 </div>
               </div>
 
-              <div className="flex space-x-2 pt-1">
+              <div className="flex justify-center space-x-3 pt-1">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-blue-600 transition-all duration-200"
+                  className="w-12 h-12 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="บันทึกการแก้ไข"
                 >
-                  บันทึก
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">💾</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">บันทึก</span>
+                  </div>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setShowEditMarkerModal(false);
-                    setEditMarkerData(null);
-                    // กลับคืนค่าเดิมของ marker
+                    // กลับคืนค่าเดิม
                     if (originalMarkerData) {
                       setMarkerSizes(prev => ({
                         ...prev,
                         [originalMarkerData.id]: originalMarkerData.size
                       }));
-                      setOriginalMarkerData(null);
                     }
+                    setShowEditMarkerModal(false);
+                    setEditMarkerData(null);
+                    setOriginalMarkerData(null);
                   }}
-                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
+                  className="w-12 h-12 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="ยกเลิกการแก้ไข"
                 >
-                  ยกเลิก
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">✕</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">ยกเลิก</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetMarkerPosition(editMarkerData.id);
+                    setShowEditMarkerModal(false);
+                    setEditMarkerData(null);
+                    setOriginalMarkerData(null);
+                  }}
+                  className="w-12 h-12 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="รีเซ็ตตำแหน่งกลับไปที่ตำแหน่งเดิม"
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">↺</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">รีเซ็ต</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeMarker(editMarkerData.id);
+                    setShowEditMarkerModal(false);
+                    setEditMarkerData(null);
+                    setOriginalMarkerData(null);
+                  }}
+                  className="w-12 h-12 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="ลบ marker นี้"
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">🗑️</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">ลบ</span>
+                  </div>
                 </button>
               </div>
             </form>
@@ -2762,6 +3182,26 @@ export default function VillageMap() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">รูปทรง:</label>
+                <div className="flex space-x-2">
+                  {zoneShapeOptions.map(shape => (
+                    <button
+                      key={shape.value}
+                      type="button"
+                      onClick={() => setEditZoneData({ ...editZoneData, shape: shape.value })}
+                      className={`flex-1 py-1.5 px-2 text-xs rounded border transition-all duration-200 ${
+                        (editZoneData.shape || "rectangle") === shape.value
+                          ? "bg-blue-500 text-white border-blue-500"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-blue-300"
+                      }`}
+                    >
+                      {shape.icon} {shape.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">เลือกสีกลุ่ม:</label>
                 <div className="flex items-center justify-center space-x-4">
                   {zoneColorOptions.map(color => (
@@ -2781,12 +3221,18 @@ export default function VillageMap() {
                 </div>
               </div>
 
-              <div className="flex space-x-2 pt-1">
+              <div className="flex justify-center space-x-3 pt-1">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-blue-600 transition-all duration-200"
+                  className="w-12 h-12 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="บันทึกการแก้ไข"
                 >
-                  บันทึก
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">💾</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">บันทึก</span>
+                  </div>
                 </button>
                 <button
                   type="button"
@@ -2799,9 +3245,51 @@ export default function VillageMap() {
                     setEditZoneData(null);
                     setOriginalZoneData(null);
                   }}
-                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
+                  className="w-12 h-12 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="ยกเลิกการแก้ไข"
                 >
-                  ยกเลิก
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">✕</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">ยกเลิก</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetZonePosition(editZoneData.id);
+                    setShowEditZoneModal(false);
+                    setEditZoneData(null);
+                    setOriginalZoneData(null);
+                  }}
+                  className="w-12 h-12 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="รีเซ็ตตำแหน่งกลับไปที่ตำแหน่งเดิม"
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">↺</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">รีเซ็ต</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeZone(editZoneData.id);
+                    setShowEditZoneModal(false);
+                    setEditZoneData(null);
+                    setOriginalZoneData(null);
+                  }}
+                  className="w-12 h-12 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  title="ลบกลุ่มนี้"
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
+                    <span className="text-lg">🗑️</span>
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
+                    <span className="text-xs font-medium">ลบ</span>
+                  </div>
                 </button>
               </div>
             </form>

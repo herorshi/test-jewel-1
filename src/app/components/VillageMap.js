@@ -71,6 +71,9 @@ export default function VillageMap() {
   const [groupDragOffset, setGroupDragOffset] = useState({ x: 0, y: 0 });
   const [dragReference, setDragReference] = useState(null);
   const [justFinishedGroupSelection, setJustFinishedGroupSelection] = useState(false);
+  // เพิ่ม state สำหรับการเลือก object เดี่ยว
+  const [clickedMarker, setClickedMarker] = useState(null);
+  const [clickedZone, setClickedZone] = useState(null);
   // เพิ่ม state สำหรับ zoom
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -78,6 +81,9 @@ export default function VillageMap() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const containerRef = useRef(null);
+  // เพิ่ม state สำหรับ copy/paste zone และ marker
+  const [copiedZones, setCopiedZones] = useState([]);
+  const [copiedMarkers, setCopiedMarkers] = useState([]);
 
   // สีและชื่อสี
   const colorOptions = [
@@ -222,6 +228,10 @@ export default function VillageMap() {
       setJustFinishedGroupSelection(false);
       return;
     }
+
+    // ล้างการเลือก object เดี่ยว
+    setClickedMarker(null);
+    setClickedZone(null);
 
     // แปลงตำแหน่งเมาส์เป็นตำแหน่งบนรูปภาพที่ zoom แล้ว
     const rect = imageRef.current.getBoundingClientRect();
@@ -508,6 +518,31 @@ export default function VillageMap() {
           e.preventDefault();
           resetZoomAndPan();
         }
+        // เพิ่ม shortcut สำหรับ copy zones/markers
+        if ((e.ctrlKey || e.metaKey) && e.key === "c" && (selectedZones.length > 0 || selectedMarkers.length > 0)) {
+          e.preventDefault();
+          if (selectedZones.length > 0) {
+            copySelectedZones();
+          }
+          if (selectedMarkers.length > 0) {
+            copySelectedMarkers();
+          }
+        }
+        // เพิ่ม shortcut สำหรับ paste zones/markers
+        if ((e.ctrlKey || e.metaKey) && e.key === "v" && (copiedZones.length > 0 || copiedMarkers.length > 0)) {
+          e.preventDefault();
+          if (copiedZones.length > 0) {
+            pasteZones();
+          }
+          if (copiedMarkers.length > 0) {
+            pasteMarkers();
+          }
+        }
+        // เพิ่ม shortcut สำหรับลบ objects ที่เลือก
+        if (e.key === "Delete" && (selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone)) {
+          e.preventDefault();
+          deleteSelectedObjects();
+        }
         // ติดตาม ctrl key
         if (e.ctrlKey || e.metaKey) {
           setIsCtrlPressed(true);
@@ -527,7 +562,7 @@ export default function VillageMap() {
         window.removeEventListener("keyup", handleKeyUp);
       };
     },
-    [currentIndex, history]
+    [currentIndex, history, selectedZones, selectedMarkers, copiedZones, copiedMarkers, clickedMarker, clickedZone]
   );
 
   // อัพเดทฟังก์ชันที่เกี่ยวข้องกับการเปลี่ยนแปลง state
@@ -1884,6 +1919,7 @@ export default function VillageMap() {
     const sizeInPixels = size * (isOnMap ? 4 : 3) * (isOnMap ? zoomLevel : 1);
     const markerColor = colorMap[displayMarker.color] || colorMap.red;
     const isSelected = selectedMarkers.includes(displayMarker.id);
+    const isClickedSingle = clickedMarker?.id === displayMarker.id;
 
     if (isOnMap) {
       return (
@@ -1898,10 +1934,23 @@ export default function VillageMap() {
           }}
           onDoubleClick={e => handleMarkerDoubleClick(e, marker)}
           onMouseDown={e => handleMarkerMouseDown(e, marker)}
+          onClick={e => {
+            e.stopPropagation();
+            // ถ้าไม่ได้กำลังลาก ให้เลือก marker นี้
+            if (!isDragging && !hasDragged) {
+              setClickedMarker(marker);
+              setClickedZone(null);
+              // ล้างการเลือกแบบกลุ่ม
+              setSelectedMarkers([]);
+              setSelectedZones([]);
+            }
+          }}
         >
           <div className={`relative ${draggedMarker?.id === displayMarker.id ? "scale-110" : ""}`}>
             <div
-              className={`rounded-full transition-all duration-200 ${isSelected ? "ring-4 ring-blue-400 ring-opacity-75" : ""}`}
+              className={`rounded-full transition-all duration-200 ${
+                isSelected ? "ring-4 ring-blue-400 ring-opacity-75" : ""
+              } ${isClickedSingle ? "ring-4 ring-red-400 ring-opacity-75" : ""}`}
               style={{
                 width: `${sizeInPixels}px`,
                 height: `${sizeInPixels}px`,
@@ -1911,6 +1960,17 @@ export default function VillageMap() {
             {isSelected && (
               <div
                 className="absolute inset-0 border-2 border-blue-500 border-dashed rounded-full animate-pulse"
+                style={{
+                  width: `${sizeInPixels + 8}px`,
+                  height: `${sizeInPixels + 8}px`,
+                  left: "-4px",
+                  top: "-4px"
+                }}
+              />
+            )}
+            {isClickedSingle && (
+              <div
+                className="absolute inset-0 border-2 border-red-500 border-solid rounded-full animate-pulse"
                 style={{
                   width: `${sizeInPixels + 8}px`,
                   height: `${sizeInPixels + 8}px`,
@@ -1976,6 +2036,7 @@ export default function VillageMap() {
     const zoneColors = getZoneColors(displayZone.color);
     const isBeingDragged = draggedZone?.id === zone.id;
     const isSelected = selectedZones.includes(zone.id);
+    const isClickedSingle = clickedZone?.id === zone.id;
 
     // กำหนดรูปทรง CSS ตาม shape
     const getShapeStyles = shape => {
@@ -2000,13 +2061,17 @@ export default function VillageMap() {
         amber: "#F59E0B"
       };
 
-      const currentBorderColor = isSelected ? "#3B82F6" : borderColorMapping[displayZone.color] || borderColorMapping.blue;
+      const currentBorderColor = isSelected
+        ? "#3B82F6"
+        : isClickedSingle
+        ? "#EF4444"
+        : borderColorMapping[displayZone.color] || borderColorMapping.blue;
 
       switch (shape) {
         case "circle":
           return {
             borderRadius: "50%",
-            border: `2px ${isSelected ? "solid" : "dashed"} ${currentBorderColor}`
+            border: `2px ${isSelected || isClickedSingle ? "solid" : "dashed"} ${currentBorderColor}`
           };
         case "triangle":
           return {
@@ -2016,7 +2081,7 @@ export default function VillageMap() {
         default:
           // rectangle
           return {
-            border: `2px ${isSelected ? "solid" : "dashed"} ${currentBorderColor}`
+            border: `2px ${isSelected || isClickedSingle ? "solid" : "dashed"} ${currentBorderColor}`
           };
       }
     };
@@ -2051,13 +2116,24 @@ export default function VillageMap() {
           transform: `rotate(${zone.rotation || 0}deg)`,
           transformOrigin: "center",
           ...getShapeStyles(displayZone.shape),
-          ...(isSelected && {
-            boxShadow: "0 0 0 3px rgba(59, 130, 246, 0.3)",
+          ...((isSelected || isClickedSingle) && {
+            boxShadow: `0 0 0 3px ${isSelected ? "rgba(59, 130, 246, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
             ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
           })
         }}
         onMouseDown={e => handleZoneMouseDown(e, zone)}
         onDoubleClick={e => handleZoneDoubleClick(e, zone)}
+        onClick={e => {
+          e.stopPropagation();
+          // ถ้าไม่ได้กำลังลาก ให้เลือก zone นี้
+          if (!isDraggingZone && !isResizingZone && !isRotatingZone) {
+            setClickedZone(zone);
+            setClickedMarker(null);
+            // ล้างการเลือกแบบกลุ่ม
+            setSelectedMarkers([]);
+            setSelectedZones([]);
+          }
+        }}
       >
         <div
           className={`absolute rounded font-medium ${
@@ -2133,6 +2209,8 @@ export default function VillageMap() {
               stroke={
                 isSelected
                   ? "#3B82F6"
+                  : isClickedSingle
+                  ? "#EF4444"
                   : {
                       blue: "#3B82F6",
                       purple: "#9333EA",
@@ -2144,7 +2222,7 @@ export default function VillageMap() {
                     }[displayZone.color] || "#3B82F6"
               }
               strokeWidth="2"
-              strokeDasharray={isSelected ? "none" : "4,2"}
+              strokeDasharray={isSelected || isClickedSingle ? "none" : "4,2"}
               vectorEffect="non-scaling-stroke"
             />
           </svg>
@@ -2303,6 +2381,8 @@ export default function VillageMap() {
   const clearSelection = () => {
     setSelectedMarkers([]);
     setSelectedZones([]);
+    setClickedMarker(null);
+    setClickedZone(null);
     setIsGroupSelecting(false);
     setGroupSelectionStart(null);
     setGroupSelectionEnd(null);
@@ -2373,6 +2453,166 @@ export default function VillageMap() {
   const resetZoomAndPan = () => {
     setZoomLevel(1);
     setPanOffset({ x: 0, y: 0 });
+  };
+
+  // ฟังก์ชัน copy zones ที่เลือก
+  const copySelectedZones = () => {
+    if (selectedZones.length === 0) return;
+
+    const zonesToCopy = zones.filter(zone => selectedZones.includes(zone.id));
+    setCopiedZones(zonesToCopy);
+
+    // แสดงข้อความแจ้งเตือนสั้นๆ
+    console.log(`คัดลอก ${zonesToCopy.length} zone แล้ว`);
+  };
+
+  // ฟังก์ชัน paste zones
+  const pasteZones = () => {
+    if (copiedZones.length === 0) return;
+
+    const newZones = copiedZones.map(originalZone => {
+      const newZone = {
+        ...originalZone,
+        id: Date.now() + Math.random(), // สร้าง id ใหม่
+        name: `${originalZone.name} (Copy)`, // เพิ่ม (Copy) ในชื่อ
+        // เลื่อนตำแหน่งเล็กน้อยเพื่อไม่ให้ซ้อนทับกัน
+        x: originalZone.x + 20,
+        y: originalZone.y + 20,
+        originalX: originalZone.x + 20,
+        originalY: originalZone.y + 20
+      };
+      return newZone;
+    });
+
+    // เพิ่ม zones ใหม่
+    setZones(prevZones => [...prevZones, ...newZones]);
+
+    // บันทึกประวัติสำหรับแต่ละ zone ที่สร้าง
+    newZones.forEach(zone => {
+      addToHistory(ACTION_TYPES.ADD_ZONE, zone);
+    });
+
+    // ตั้งค่าการมองเห็นสำหรับ zones ใหม่
+    const newVisibleZones = {};
+    newZones.forEach(zone => {
+      newVisibleZones[zone.id] = true;
+    });
+    setVisibleZones(prev => ({ ...prev, ...newVisibleZones }));
+
+    // เลือก zones ใหม่ที่เพิ่งวาง
+    setSelectedZones(newZones.map(zone => zone.id));
+    setSelectedMarkers([]); // ล้างการเลือก markers
+
+    console.log(`วาง ${newZones.length} zone แล้ว`);
+  };
+
+  // ฟังก์ชัน copy markers ที่เลือก
+  const copySelectedMarkers = () => {
+    if (selectedMarkers.length === 0) return;
+
+    const markersToCopy = markers.filter(marker => selectedMarkers.includes(marker.id));
+    setCopiedMarkers(markersToCopy);
+
+    // แสดงข้อความแจ้งเตือนสั้นๆ
+    console.log(`คัดลอก ${markersToCopy.length} marker แล้ว`);
+  };
+
+  // ฟังก์ชัน paste markers
+  const pasteMarkers = () => {
+    if (copiedMarkers.length === 0) return;
+
+    const newMarkers = copiedMarkers.map(originalMarker => {
+      const newMarker = {
+        ...originalMarker,
+        id: Date.now() + Math.random(), // สร้าง id ใหม่
+        name: `${originalMarker.name} (Copy)`, // เพิ่ม (Copy) ในชื่อ
+        // เลื่อนตำแหน่งเล็กน้อยเพื่อไม่ให้ซ้อนทับกัน
+        x: originalMarker.x + 20,
+        y: originalMarker.y + 20,
+        originalX: originalMarker.x + 20,
+        originalY: originalMarker.y + 20
+      };
+      return newMarker;
+    });
+
+    // เพิ่ม markers ใหม่
+    setMarkers(prevMarkers => [...prevMarkers, ...newMarkers]);
+
+    // บันทึกประวัติสำหรับแต่ละ marker ที่สร้าง
+    newMarkers.forEach(marker => {
+      addToHistory(ACTION_TYPES.ADD_MARKER, marker);
+    });
+
+    // เลือก markers ใหม่ที่เพิ่งวาง
+    setSelectedMarkers(newMarkers.map(marker => marker.id));
+    setSelectedZones([]); // ล้างการเลือก zones
+
+    console.log(`วาง ${newMarkers.length} marker แล้ว`);
+  };
+
+  // ฟังก์ชันลบ objects ที่เลือก
+  const deleteSelectedObjects = () => {
+    let deletedCount = 0;
+    const deletedMarkers = [];
+    const deletedZones = [];
+
+    // ลบ marker ที่คลิกเดี่ยว
+    if (clickedMarker) {
+      deletedMarkers.push(clickedMarker);
+      setMarkers(prevMarkers => prevMarkers.filter(marker => marker.id !== clickedMarker.id));
+      addToHistory(ACTION_TYPES.REMOVE_MARKER, clickedMarker);
+      deletedCount += 1;
+    }
+
+    // ลบ zone ที่คลิกเดี่ยว
+    if (clickedZone) {
+      deletedZones.push(clickedZone);
+      setZones(prevZones => prevZones.filter(zone => zone.id !== clickedZone.id));
+      addToHistory(ACTION_TYPES.REMOVE_ZONE, clickedZone);
+      deletedCount += 1;
+    }
+
+    // ลบ markers ที่เลือกแบบกลุ่ม
+    if (selectedMarkers.length > 0) {
+      const markersToDelete = markers.filter(marker => selectedMarkers.includes(marker.id));
+      deletedMarkers.push(...markersToDelete);
+
+      setMarkers(prevMarkers => prevMarkers.filter(marker => !selectedMarkers.includes(marker.id)));
+
+      // บันทึกประวัติการลบ markers
+      markersToDelete.forEach(marker => {
+        addToHistory(ACTION_TYPES.REMOVE_MARKER, marker);
+      });
+
+      deletedCount += markersToDelete.length;
+    }
+
+    // ลบ zones ที่เลือกแบบกลุ่ม
+    if (selectedZones.length > 0) {
+      const zonesToDelete = zones.filter(zone => selectedZones.includes(zone.id));
+      deletedZones.push(...zonesToDelete);
+
+      setZones(prevZones => prevZones.filter(zone => !selectedZones.includes(zone.id)));
+
+      // บันทึกประวัติการลบ zones
+      zonesToDelete.forEach(zone => {
+        addToHistory(ACTION_TYPES.REMOVE_ZONE, zone);
+      });
+
+      deletedCount += zonesToDelete.length;
+    }
+
+    // ล้างการเลือกทั้งหมด
+    clearSelection();
+
+    // แสดงข้อความแจ้งเตือน
+    const deletedItems = [];
+    if (deletedMarkers.length > 0) deletedItems.push(`${deletedMarkers.length} markers`);
+    if (deletedZones.length > 0) deletedItems.push(`${deletedZones.length} zones`);
+
+    if (deletedItems.length > 0) {
+      console.log(`ลบ ${deletedItems.join(" และ ")} แล้ว`);
+    }
   };
 
   return (
@@ -2600,6 +2840,9 @@ export default function VillageMap() {
                   • <span className="font-semibold">Ctrl+0</span> เพื่อรีเซ็ต Zoom และ Pan
                 </li>
                 <li>
+                  • <span className="font-semibold">คลิกเดียว</span> ที่ marker/zone เพื่อเลือกเดี่ยว (แสดงขอบสี)
+                </li>
+                <li>
                   • <span className="font-semibold">Shift+ลาก</span> เพื่อเลือกหลาย markers และ zones
                 </li>
                 <li>
@@ -2608,6 +2851,13 @@ export default function VillageMap() {
                 <li>• ลาก marker เข้าไปในกลุ่มเพื่อเปลี่ยนกลุ่มอัตโนมัติ</li>
                 <li>• กด ESC เพื่อยกเลิกการเลือก</li>
                 <li>• กด Ctrl+Z เพื่อ Undo การกระทำ, Ctrl+Shift+Z เพื่อ Redo</li>
+                <li>
+                  • <span className="font-semibold">Ctrl+C</span> เพื่อคัดลอก zones/markers ที่เลือก,{" "}
+                  <span className="font-semibold">Ctrl+V</span> เพื่อวาง zones/markers ที่คัดลอก
+                </li>
+                <li>
+                  • <span className="font-semibold">Delete</span> เพื่อลบ zones/markers ที่เลือก
+                </li>
                 <li>• ใช้ปุ่ม แสดง/ซ่อน เพื่อจัดการการแสดงผลกลุ่ม</li>
                 <li>
                   • <span className="font-semibold">เลือกรูปทรง</span> ก่อนลากเพื่อสร้างกลุ่มรูปทรงต่างๆ
@@ -2616,14 +2866,22 @@ export default function VillageMap() {
             </div>
 
             {/* แสดงข้อมูลการเลือก */}
-            {(selectedMarkers.length > 0 || selectedZones.length > 0) && (
+            {(selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone) && (
               <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
                 <div className="font-medium">
-                  เลือกแล้ว: {selectedMarkers.length} markers
-                  {selectedZones.length > 0 && `, ${selectedZones.length} zones`}
+                  {clickedMarker || clickedZone ? (
+                    <>เลือก: {clickedMarker ? `Marker "${clickedMarker.name}"` : `Zone "${clickedZone.name}"`}</>
+                  ) : (
+                    <>
+                      เลือกแล้ว: {selectedMarkers.length} markers
+                      {selectedZones.length > 0 && `, ${selectedZones.length} zones`}
+                    </>
+                  )}
                 </div>
                 <div className="text-xs mt-1">
-                  {isDraggingGroup
+                  {clickedMarker || clickedZone
+                    ? "กด Delete เพื่อลบ object นี้ หรือ ESC เพื่อยกเลิกการเลือก"
+                    : isDraggingGroup
                     ? "กำลังลากกลุ่ม markers..."
                     : isDraggingZoneGroup
                     ? "กำลังลากกลุ่ม zones..."
@@ -2634,6 +2892,37 @@ export default function VillageMap() {
                     : selectedMarkers.length > 0
                     ? "คลิกที่ marker ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"
                     : "คลิกที่ zone ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"}
+                </div>
+                <div className="text-xs mt-1 font-medium text-gray-600">
+                  {clickedMarker || clickedZone
+                    ? "Delete เพื่อลบ, ESC เพื่อยกเลิกการเลือก"
+                    : "Ctrl+C เพื่อคัดลอก, Delete เพื่อลบ, ESC เพื่อยกเลิกการเลือก"}
+                </div>
+              </div>
+            )}
+
+            {/* แสดงข้อมูล Copy/Paste */}
+            {(copiedZones.length > 0 || copiedMarkers.length > 0) && (
+              <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
+                <div className="font-medium">
+                  คลิปบอร์ด:{" "}
+                  {(() => {
+                    const items = [];
+                    if (copiedZones.length > 0) items.push(`${copiedZones.length} zones`);
+                    if (copiedMarkers.length > 0) items.push(`${copiedMarkers.length} markers`);
+                    return items.join(" และ ");
+                  })()}{" "}
+                  พร้อมวาง
+                </div>
+                <div className="text-xs mt-1">
+                  กด Ctrl+V เพื่อวาง{" "}
+                  {(() => {
+                    const items = [];
+                    if (copiedZones.length > 0) items.push("zones");
+                    if (copiedMarkers.length > 0) items.push("markers");
+                    return items.join(" และ ");
+                  })()}{" "}
+                  ที่คัดลอกไว้
                 </div>
               </div>
             )}
@@ -2680,6 +2969,39 @@ export default function VillageMap() {
                   >
                     ✕
                   </button>
+                  {(copiedZones.length > 0 || copiedMarkers.length > 0) && (
+                    <button
+                      onClick={() => {
+                        if (copiedZones.length > 0) pasteZones();
+                        if (copiedMarkers.length > 0) pasteMarkers();
+                      }}
+                      className="w-8 h-8 bg-green-500 text-white rounded-full text-sm hover:bg-green-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                      title={(() => {
+                        const items = [];
+                        if (copiedZones.length > 0) items.push(`${copiedZones.length} zones`);
+                        if (copiedMarkers.length > 0) items.push(`${copiedMarkers.length} markers`);
+                        return `วาง ${items.join(" และ ")} (Ctrl+V)`;
+                      })()}
+                    >
+                      📋
+                    </button>
+                  )}
+                  {(selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone) && (
+                    <button
+                      onClick={deleteSelectedObjects}
+                      className="w-8 h-8 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                      title={(() => {
+                        if (clickedMarker) return `ลบ Marker "${clickedMarker.name}" (Delete)`;
+                        if (clickedZone) return `ลบ Zone "${clickedZone.name}" (Delete)`;
+                        const items = [];
+                        if (selectedMarkers.length > 0) items.push(`${selectedMarkers.length} markers`);
+                        if (selectedZones.length > 0) items.push(`${selectedZones.length} zones`);
+                        return `ลบ ${items.join(" และ ")} (Delete)`;
+                      })()}
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="mb-2">

@@ -323,13 +323,133 @@ export default function VillageMap() {
     }
   };
 
+  // เพิ่มฟังก์ชัน redo
+  const redo = () => {
+    if (currentIndex < history.length - 1) {
+      const nextIndex = currentIndex + 1;
+      const action = history[nextIndex];
+
+      switch (action.type) {
+        case ACTION_TYPES.ADD_MARKER:
+          setMarkers([...markers, action.data]);
+          break;
+        case ACTION_TYPES.REMOVE_MARKER:
+          setMarkers(markers.filter(m => m.id !== action.data.id));
+          break;
+        case ACTION_TYPES.MOVE_MARKER:
+          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m)));
+          break;
+        case ACTION_TYPES.RESET_MARKER:
+          setMarkers(
+            markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.originalX, y: action.data.originalY } : m))
+          );
+          break;
+        case ACTION_TYPES.ADD_ZONE:
+          setZones([...zones, action.data]);
+          break;
+        case ACTION_TYPES.REMOVE_ZONE:
+          setZones(zones.filter(z => z.id !== action.data.id));
+          break;
+        case ACTION_TYPES.EDIT_ZONE:
+          setZones(zones.map(z => (z.id === action.data.id ? { ...z, ...action.data.current } : z)));
+          break;
+        case ACTION_TYPES.EDIT_MARKER:
+          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, ...action.data.current } : m)));
+          break;
+        case ACTION_TYPES.MOVE_GROUP:
+          setMarkers(
+            markers.map(marker => {
+              const movedMarker = action.data.markers.find(m => m.id === marker.id);
+              if (movedMarker) {
+                return {
+                  ...marker,
+                  x: movedMarker.currentX,
+                  y: movedMarker.currentY
+                };
+              }
+              return marker;
+            })
+          );
+          break;
+        case ACTION_TYPES.MOVE_ZONE_GROUP:
+          setZones(
+            zones.map(zone => {
+              const movedZone = action.data.zones.find(z => z.id === zone.id);
+              if (movedZone) {
+                return {
+                  ...zone,
+                  x: movedZone.currentX,
+                  y: movedZone.currentY
+                };
+              }
+              return zone;
+            })
+          );
+          break;
+        case ACTION_TYPES.MOVE_MIXED_GROUP:
+          // redo สำหรับ markers
+          if (action.data.markers) {
+            setMarkers(
+              markers.map(marker => {
+                const movedMarker = action.data.markers.find(m => m.id === marker.id);
+                if (movedMarker) {
+                  return {
+                    ...marker,
+                    x: movedMarker.currentX,
+                    y: movedMarker.currentY
+                  };
+                }
+                return marker;
+              })
+            );
+          }
+          // redo สำหรับ zones
+          if (action.data.zones) {
+            setZones(
+              zones.map(zone => {
+                const movedZone = action.data.zones.find(z => z.id === zone.id);
+                if (movedZone) {
+                  return {
+                    ...zone,
+                    x: movedZone.currentX,
+                    y: movedZone.currentY
+                  };
+                }
+                return zone;
+              })
+            );
+          }
+          break;
+      }
+
+      setCurrentIndex(nextIndex);
+    }
+  };
+
+  // เพิ่ม useEffect สำหรับจัดการ wheel event บน container
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      // เพิ่ม passive: false เพื่อให้สามารถ preventDefault ได้
+      container.addEventListener("wheel", handleWheel, { passive: false });
+
+      return () => {
+        container.removeEventListener("wheel", handleWheel);
+      };
+    }
+  }, []);
+
   // เพิ่ม event listener สำหรับ keyboard shortcuts
   useEffect(
     () => {
       const handleKeyDown = e => {
-        if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
           e.preventDefault();
           undo();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "Z") {
+          e.preventDefault();
+          redo();
         }
         if (e.key === "Escape") {
           clearSelection();
@@ -1967,22 +2087,6 @@ export default function VillageMap() {
     setPanOffset({ x: 0, y: 0 });
   };
 
-  // เพิ่ม useEffect สำหรับจัดการ wheel event บน container
-  useEffect(
-    () => {
-      const container = containerRef.current;
-      if (container) {
-        // เพิ่ม passive: false เพื่อให้สามารถ preventDefault ได้
-        container.addEventListener("wheel", handleWheel, { passive: false });
-
-        return () => {
-          container.removeEventListener("wheel", handleWheel);
-        };
-      }
-    },
-    [handleWheel]
-  );
-
   return (
     <div className="relative w-full max-w-4xl mx-auto">
       {isLoading ? (
@@ -2130,7 +2234,7 @@ export default function VillageMap() {
                 </li>
                 <li>• ลาก marker เข้าไปในกลุ่มเพื่อเปลี่ยนกลุ่มอัตโนมัติ</li>
                 <li>• กด ESC เพื่อยกเลิกการเลือก</li>
-                <li>• กด Ctrl+Z เพื่อ Undo การกระทำ</li>
+                <li>• กด Ctrl+Z เพื่อ Undo การกระทำ, Ctrl+Shift+Z เพื่อ Redo</li>
                 <li>• ใช้ปุ่ม แสดง/ซ่อน เพื่อจัดการการแสดงผลกลุ่ม</li>
               </ul>
             </div>
@@ -2169,12 +2273,30 @@ export default function VillageMap() {
                     </span>
                   )}
                 </div>
-                <button
-                  onClick={resetZoomAndPan}
-                  className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 transition-colors"
-                >
-                  รีเซ็ต
-                </button>
+                <div className="flex space-x-1">
+                  <button
+                    onClick={undo}
+                    disabled={currentIndex < 0}
+                    className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Undo (Ctrl+Z)"
+                  >
+                    ↶
+                  </button>
+                  <button
+                    onClick={redo}
+                    disabled={currentIndex >= history.length - 1}
+                    className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Redo (Ctrl+Shift+Z)"
+                  >
+                    ↷
+                  </button>
+                  <button
+                    onClick={resetZoomAndPan}
+                    className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 transition-colors"
+                  >
+                    รีเซ็ต
+                  </button>
+                </div>
               </div>
             </div>
           </div>

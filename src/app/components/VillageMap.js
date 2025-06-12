@@ -1060,9 +1060,15 @@ export default function VillageMap() {
       return;
     }
 
+    // แปลงตำแหน่งเมาส์เป็นตำแหน่งบนรูปภาพที่ zoom แล้ว
     const rect = imageRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const rawMouseX = e.clientX - containerRect.left;
+    const rawMouseY = e.clientY - containerRect.top;
+
+    // คำนวณตำแหน่งจริงบนรูปภาพ
+    const mouseX = (rawMouseX - panOffset.x) / zoomLevel;
+    const mouseY = (rawMouseY - panOffset.y) / zoomLevel;
 
     // ตรวจสอบว่า zone นี้อยู่ในกลุ่มที่เลือกหรือไม่ และไม่มี handle
     if (selectedZones.includes(zone.id) && selectedZones.length > 0 && !handle) {
@@ -1188,9 +1194,15 @@ export default function VillageMap() {
     }
 
     if (isDraggingZone && draggedZone && originalZoneState) {
+      // แปลงตำแหน่งเมาส์เป็นตำแหน่งบนรูปภาพที่ zoom แล้ว
       const rect = imageRef.current.getBoundingClientRect();
-      const mouseX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      const mouseY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const rawMouseX = e.clientX - containerRect.left;
+      const rawMouseY = e.clientY - containerRect.top;
+
+      // คำนวณตำแหน่งจริงบนรูปภาพ
+      const mouseX = Math.max(0, Math.min((rawMouseX - panOffset.x) / zoomLevel, rect.width / zoomLevel));
+      const mouseY = Math.max(0, Math.min((rawMouseY - panOffset.y) / zoomLevel, rect.height / zoomLevel));
 
       setZones(prevZones =>
         prevZones.map(zone =>
@@ -1211,7 +1223,7 @@ export default function VillageMap() {
         prevZones.map(zone => {
           if (zone.id === draggedZone.id) {
             let newZone = { ...zone };
-            const minSize = 50;
+            const minSize = 1; // เปลี่ยนจาก 50 เป็น 1 เพื่อให้ resize เล็กได้ตามต้องการ
 
             // คำนวณขอบเขตสูงสุดและต่ำสุด
             const originalLeft = originalZoneState.initialX;
@@ -1302,7 +1314,7 @@ export default function VillageMap() {
               }
             }
 
-            // ตรวจสอบขนาดขั้นต่ำ
+            // ตรวจสอบขนาดขั้นต่ำ - อนุญาตให้เล็กได้ตามต้องการ
             if (newZone.width < minSize || newZone.height < minSize) {
               return zone;
             }
@@ -2048,11 +2060,33 @@ export default function VillageMap() {
         onDoubleClick={e => handleZoneDoubleClick(e, zone)}
       >
         <div
-          className={`absolute px-2 py-1 rounded font-medium ${
+          className={`absolute rounded font-medium ${
             displayZone.shape === "triangle" ? "top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" : "top-1 left-1"
           }`}
           style={{
-            fontSize: `${Math.max(10, 12 * zoomLevel)}px`,
+            // คำนวณขนาดฟอนต์ตามขนาดของ zone และ zoom level
+            fontSize: (() => {
+              const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
+              // ปรับให้แสดงได้ดีขึ้นแม้เมื่อ zoom มาก
+              const baseFontSize = Math.max(6, Math.min(18, zoneSize / 6));
+              return `${Math.max(6, Math.min(baseFontSize, 16))}px`;
+            })(),
+            // คำนวณ padding ตามขนาดฟอนต์
+            padding: (() => {
+              const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
+              if (zoneSize < 40) return "0px 1px";
+              if (zoneSize < 80) return "1px 2px";
+              if (zoneSize < 120) return "2px 4px";
+              return "4px 8px";
+            })(),
+            // แสดงข้อความแม้ใน zone เล็ก แต่ปรับขนาดให้เหมาะสม
+            display: Math.min(zone.width * zoomLevel, zone.height * zoomLevel) < 25 ? "none" : "block",
+            // จำกัดขนาดข้อความไม่ให้เกินขนาด zone
+            maxWidth: `${Math.max(0, zone.width * zoomLevel - 8)}px`,
+            maxHeight: `${Math.max(0, zone.height * zoomLevel - 8)}px`,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
             backgroundColor: (() => {
               const colorMapping = {
                 blue: "rgba(59, 130, 246, 0.9)",
@@ -2066,8 +2100,10 @@ export default function VillageMap() {
               return colorMapping[displayZone.color] || colorMapping["blue"];
             })(),
             color: "white",
-            textShadow: "1px 1px 2px rgba(0,0,0,0.7)"
+            textShadow: "1px 1px 2px rgba(0,0,0,0.7)",
+            lineHeight: "1.2"
           }}
+          title={displayZone.name} // แสดง tooltip เมื่อ hover
         >
           {displayZone.name}
         </div>
@@ -2119,9 +2155,19 @@ export default function VillageMap() {
           className="absolute left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-xl border-2 border-gray-300
             flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-200"
           style={{
-            top: `-${Math.max(32, Math.min(48, 36 * zoomLevel))}px`,
-            width: `${Math.max(28, Math.min(40, 32 * zoomLevel))}px`,
-            height: `${Math.max(28, Math.min(40, 32 * zoomLevel))}px`,
+            top: (() => {
+              // ปรับระยะห่างและขนาดให้เหมาะสมกับ zoom level
+              const distance = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(32, Math.min(48, 36 * zoomLevel));
+              return `-${distance}px`;
+            })(),
+            width: (() => {
+              const size = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
+              return `${Math.max(24, Math.min(40, size))}px`;
+            })(),
+            height: (() => {
+              const size = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
+              return `${Math.max(24, Math.min(40, size))}px`;
+            })(),
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
           }}
           onMouseDown={e => handleZoneMouseDown(e, zone, "rotate")}
@@ -2130,8 +2176,14 @@ export default function VillageMap() {
           <svg
             className="text-gray-600"
             style={{
-              width: `${Math.max(16, Math.min(24, 20 * zoomLevel))}px`,
-              height: `${Math.max(16, Math.min(24, 20 * zoomLevel))}px`
+              width: (() => {
+                const size = zoomLevel >= 2 ? Math.max(14, 20 / zoomLevel) : Math.max(16, Math.min(24, 20 * zoomLevel));
+                return `${Math.max(14, Math.min(20, size))}px`;
+              })(),
+              height: (() => {
+                const size = zoomLevel >= 2 ? Math.max(14, 20 / zoomLevel) : Math.max(16, Math.min(24, 20 * zoomLevel));
+                return `${Math.max(14, Math.min(20, size))}px`;
+              })()
             }}
             viewBox="0 0 24 24"
             fill="none"
@@ -2148,9 +2200,19 @@ export default function VillageMap() {
 
         {/* จุดจับสำหรับปรับขนาด */}
         {resizeHandles.map(handle => {
-          // คำนวณขนาดจุดจับที่เหมาะสม - ขนาดใหญ่ขึ้นและมองเห็นได้ชัดเจน
-          const baseSize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel) > 200 ? 20 : 16;
-          const handleSize = Math.max(baseSize, Math.min(24, 12 * zoomLevel + 8));
+          // คำนวณขนาดจุดจับที่เหมาะสม - ปรับให้มองเห็นได้ดีแม้เมื่อ zoom มาก
+          const zoneDisplaySize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel);
+          let handleSize;
+
+          if (zoomLevel >= 2) {
+            // เมื่อ zoom มาก ให้จุดจับมีขนาดคงที่เพื่อให้คลิกได้ง่าย
+            handleSize = Math.max(16, Math.min(20, zoneDisplaySize / 10));
+          } else {
+            // zoom ปกติ
+            handleSize = zoneDisplaySize > 200 ? 20 : Math.max(12, 16 * zoomLevel);
+          }
+
+          handleSize = Math.max(12, Math.min(24, handleSize)); // จำกัดขนาดขั้นต่ำและสูงสุด
           const handleOffset = handleSize / 2;
 
           return (

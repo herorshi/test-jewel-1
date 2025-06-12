@@ -121,19 +121,40 @@ export default function VillageMap() {
   const MIN_MARKER_SIZE = 1; // ขนาดต่ำสุด 16px
   const MAX_MARKER_SIZE = 16; // ขนาดสูงสุด 48px
 
-  // ตรวจสอบว่าจุดอยู่ในกลุ่มหรือไม่
+  // ตรวจสอบว่าจุดอยู่ในกลุ่มหรือไม่ (รองรับการหมุน)
   const isPointInZone = (x, y, zone) => {
-    const { shape = "rectangle", x: zx, y: zy, width, height } = zone;
+    const { shape = "rectangle", x: zx, y: zy, width, height, rotation = 0 } = zone;
+
+    // หาจุดกึ่งกลางของ zone
+    const centerX = zx + width / 2;
+    const centerY = zy + height / 2;
+
+    // ถ้ามีการหมุน ต้องแปลงพิกัดจุดกลับไปเป็นพิกัดเดิมก่อนการหมุน
+    let testX = x;
+    let testY = y;
+
+    if (rotation !== 0) {
+      // แปลงองศาเป็นเรเดียน
+      const rad = (-rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      // แปลงพิกัดให้สัมพันธ์กับจุดกึ่งกลาง
+      const relativeX = x - centerX;
+      const relativeY = y - centerY;
+
+      // หมุนจุดกลับไปตำแหน่งเดิม (inverse rotation)
+      testX = centerX + (relativeX * cos - relativeY * sin);
+      testY = centerY + (relativeX * sin + relativeY * cos);
+    }
 
     switch (shape) {
       case "circle":
         // สำหรับวงกลม: ตรวจสอบระยะห่างจากจุดกึ่งกลาง
-        const centerX = zx + width / 2;
-        const centerY = zy + height / 2;
         const radiusX = width / 2;
         const radiusY = height / 2;
-        const dx = (x - centerX) / radiusX;
-        const dy = (y - centerY) / radiusY;
+        const dx = (testX - centerX) / radiusX;
+        const dy = (testY - centerY) / radiusY;
         return dx * dx + dy * dy <= 1;
 
       case "triangle":
@@ -149,9 +170,9 @@ export default function VillageMap() {
           return (px - bx) * (ay - by) - (ax - bx) * (py - by);
         };
 
-        const d1 = sign(x, y, x1, y1, x2, y2);
-        const d2 = sign(x, y, x2, y2, x3, y3);
-        const d3 = sign(x, y, x3, y3, x1, y1);
+        const d1 = sign(testX, testY, x1, y1, x2, y2);
+        const d2 = sign(testX, testY, x2, y2, x3, y3);
+        const d3 = sign(testX, testY, x3, y3, x1, y1);
 
         const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
         const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
@@ -160,13 +181,35 @@ export default function VillageMap() {
 
       default:
         // rectangle
-        return x >= zx && x <= zx + width && y >= zy && y <= zy + height;
+        return testX >= zx && testX <= zx + width && testY >= zy && testY <= zy + height;
     }
   };
 
   // หากลุ่มที่ marker อยู่
   const findMarkerZone = marker => {
     return zones.find(zone => isPointInZone(marker.x, marker.y, zone));
+  };
+
+  // ฟังก์ชันสำหรับอัพเดทกลุ่มของ markers ทันทีหลังจากการเปลี่ยนแปลง zone
+  const updateMarkersGroup = () => {
+    setMarkers(prevMarkers => {
+      let hasChanges = false;
+      const updatedMarkers = prevMarkers.map(marker => {
+        const zone = findMarkerZone(marker);
+        const newGroup = zone ? zone.name : "Marker";
+        if (marker.group !== newGroup) {
+          hasChanges = true;
+          console.log(`Marker "${marker.name}" ย้ายจากกลุ่ม "${marker.group}" ไปยัง "${newGroup}"`);
+        }
+        return { ...marker, group: newGroup };
+      });
+
+      if (hasChanges) {
+        console.log("อัพเดทกลุ่มของ markers เรียบร้อยแล้ว");
+      }
+
+      return updatedMarkers;
+    });
   };
 
   // คำนวณระยะทางระหว่างสองจุด
@@ -182,11 +225,16 @@ export default function VillageMap() {
       setMarkers(prevMarkers =>
         prevMarkers.map(marker => {
           const zone = findMarkerZone(marker);
-          return zone ? { ...marker, group: zone.name } : marker;
+          const newGroup = zone ? zone.name : "Marker";
+          // อัพเดทเฉพาะเมื่อกลุ่มเปลี่ยนแปลง
+          if (marker.group !== newGroup) {
+            return { ...marker, group: newGroup };
+          }
+          return marker;
         })
       );
     },
-    [zones]
+    [zones, markers.length] // เพิ่ม markers.length เพื่อให้อัพเดทเมื่อมี marker ใหม่
   );
 
   // เมื่อสร้างกลุ่มใหม่ให้กำหนดค่าเริ่มต้นเป็นแสดง
@@ -621,6 +669,11 @@ export default function VillageMap() {
       setZoneFormData({ name: "", color: "blue" });
       // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
       setVisibleZones({ ...visibleZones, [newZone.id]: true });
+
+      // อัพเดทกลุ่มของ markers หลังจากสร้าง zone ใหม่
+      setTimeout(() => {
+        updateMarkersGroup();
+      }, 50);
     }
   };
 
@@ -1644,6 +1697,13 @@ export default function VillageMap() {
       // บันทึกประวัติถ้ามีการเปลี่ยนแปลง
       if (hasPositionChanged) {
         addToHistory(ACTION_TYPES.MOVE_MIXED_GROUP, historyData);
+
+        // อัพเดทกลุ่มของ markers หลังจากย้าย objects แบบผสม
+        if (historyData.zones) {
+          setTimeout(() => {
+            updateMarkersGroup();
+          }, 50);
+        }
       }
 
       setIsDraggingMixed(false);
@@ -1671,6 +1731,11 @@ export default function VillageMap() {
         addToHistory(ACTION_TYPES.MOVE_ZONE_GROUP, {
           zones: originalPositions
         });
+
+        // อัพเดทกลุ่มของ markers หลังจากย้าย zones
+        setTimeout(() => {
+          updateMarkersGroup();
+        }, 50);
       }
 
       setIsDraggingZoneGroup(false);
@@ -1710,6 +1775,11 @@ export default function VillageMap() {
       setResizeHandle(null);
       setOriginalZoneState(null);
       setRotationStartAngle(0);
+
+      // อัพเดทกลุ่มของ markers หลังจากการหมุนหรือปรับขนาด zone
+      setTimeout(() => {
+        updateMarkersGroup();
+      }, 50);
     }
 
     if (isDragging) {
@@ -2347,6 +2417,11 @@ export default function VillageMap() {
       setShowEditZoneModal(false);
       setEditZoneData(null);
       setOriginalZoneData(null);
+
+      // อัพเดทกลุ่มของ markers หลังจากแก้ไข zone (อัพเดทชื่อกลุ่ม)
+      setTimeout(() => {
+        updateMarkersGroup();
+      }, 50);
     }
   };
 
@@ -2862,6 +2937,7 @@ export default function VillageMap() {
                 <li>
                   • <span className="font-semibold">เลือกรูปทรง</span> ก่อนลากเพื่อสร้างกลุ่มรูปทรงต่างๆ
                 </li>
+                <li>• Markers จะถูกจัดกลุ่มอัตโนมัติตามตำแหน่งที่อยู่ในขอบเขต Zone (รองรับการหมุน)</li>
               </ul>
             </div>
 

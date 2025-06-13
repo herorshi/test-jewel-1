@@ -2024,9 +2024,33 @@ export default function VillageMap() {
               style={{
                 width: `${sizeInPixels}px`,
                 height: `${sizeInPixels}px`,
-                backgroundColor: markerColor
+                backgroundColor: markerColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                position: "relative"
               }}
-            />
+            >
+              {/* ชื่อ marker ตรงกลาง */}
+              {displayMarker.name && (
+                <span
+                  className="absolute left-1/2 top-1/2 whitespace-nowrap pointer-events-none select-none"
+                  style={{
+                    transform: "translate(-50%, -50%)",
+                    color: "#fff",
+                    fontWeight: 600,
+                    textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                    fontSize: `${Math.max(10, Math.min(18, sizeInPixels / 3))}px`,
+                    maxWidth: `${sizeInPixels - 8}px`,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis"
+                  }}
+                  title={displayMarker.name}
+                >
+                  {displayMarker.name}
+                </span>
+              )}
+            </div>
             {isSelected && (
               <div
                 className="absolute inset-0 border-2 border-blue-500 border-dashed rounded-full animate-pulse"
@@ -2082,13 +2106,33 @@ export default function VillageMap() {
     } else {
       return (
         <div
-          className={`rounded-full transition-all duration-200`}
+          className={`rounded-full transition-all duration-200 flex items-center justify-center relative`}
           style={{
             width: `${sizeInPixels}px`,
             height: `${sizeInPixels}px`,
             backgroundColor: markerColor
           }}
-        />
+        >
+          {/* ชื่อ marker ตรงกลาง (ใน list) */}
+          {displayMarker.name && (
+            <span
+              className="absolute left-1/2 top-1/2 whitespace-nowrap pointer-events-none select-none"
+              style={{
+                transform: "translate(-50%, -50%)",
+                color: "#fff",
+                fontWeight: 600,
+                textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                fontSize: `${Math.max(10, Math.min(18, sizeInPixels / 3))}px`,
+                maxWidth: `${sizeInPixels - 8}px`,
+                overflow: "hidden",
+                textOverflow: "ellipsis"
+              }}
+              title={displayMarker.name}
+            >
+              {displayMarker.name}
+            </span>
+          )}
+        </div>
       );
     }
   };
@@ -2168,170 +2212,222 @@ export default function VillageMap() {
       { position: "se", cursor: "se-resize", style: { bottom: -5, right: -5 } }
     ];
 
-    return (
-      <div
-        key={zone.id}
-        className={`absolute ${displayZone.shape !== "triangle" ? zoneColors.bgOpacity : ""} ${
-          displayZone.shape !== "triangle" ? zoneColors.border : ""
-        } 
-          ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
-          transition-opacity cursor-move group
-          ${isSelected && selectedZones.length > 1 ? "cursor-move" : ""}`}
-        style={{
-          left: zone.x * zoomLevel + panOffset.x,
-          top: zone.y * zoomLevel + panOffset.y,
-          width: zone.width * zoomLevel,
-          height: zone.height * zoomLevel,
-          zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
-          transform: `rotate(${zone.rotation || 0}deg)`,
-          transformOrigin: "center",
-          ...getShapeStyles(displayZone.shape),
-          ...((isSelected || isClickedSingle) && {
-            boxShadow: `0 0 0 3px ${isSelected ? "rgba(59, 130, 246, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-            ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
-          })
-        }}
-        onMouseDown={e => handleZoneMouseDown(e, zone)}
-        onDoubleClick={e => handleZoneDoubleClick(e, zone)}
-        onClick={e => {
-          e.stopPropagation();
-          // ถ้าไม่ได้กำลังลาก ให้เลือก zone นี้
-          if (!isDraggingZone && !isResizingZone && !isRotatingZone) {
-            setClickedZone(zone);
-            setClickedMarker(null);
-            // ล้างการเลือกแบบกลุ่ม
-            setSelectedMarkers([]);
-            setSelectedZones([]);
-          }
-        }}
-      >
-        <div
-          className={`absolute rounded font-medium ${
-            displayZone.shape === "triangle" ? "top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" : "top-1 left-1"
-          }`}
-          style={{
-            // คำนวณขนาดฟอนต์ตามขนาดของ zone และ zoom level
-            fontSize: (() => {
-              const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
-              // ปรับให้แสดงได้ดีขึ้นแม้เมื่อ zoom มาก
-              const baseFontSize = Math.max(6, Math.min(18, zoneSize / 6));
-              return `${Math.max(6, Math.min(baseFontSize, 16))}px`;
-            })(),
-            // คำนวณ padding ตามขนาดฟอนต์
-            padding: (() => {
-              const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
-              if (zoneSize < 40) return "0px 1px";
-              if (zoneSize < 80) return "1px 2px";
-              if (zoneSize < 120) return "2px 4px";
-              return "4px 8px";
-            })(),
-            // แสดงข้อความแม้ใน zone เล็ก แต่ปรับขนาดให้เหมาะสม
-            display: Math.min(zone.width * zoomLevel, zone.height * zoomLevel) < 25 ? "none" : "block",
-            // จำกัดขนาดข้อความไม่ให้เกินขนาด zone
-            maxWidth: `${Math.max(0, zone.width * zoomLevel - 8)}px`,
-            maxHeight: `${Math.max(0, zone.height * zoomLevel - 8)}px`,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            backgroundColor: (() => {
-              const colorMapping = {
-                blue: "rgba(59, 130, 246, 0.9)",
-                purple: "rgba(147, 51, 234, 0.9)",
-                orange: "rgba(249, 115, 22, 0.9)",
-                emerald: "rgba(16, 185, 129, 0.9)",
-                rose: "rgba(244, 63, 94, 0.9)",
-                cyan: "rgba(6, 182, 212, 0.9)",
-                amber: "rgba(245, 158, 11, 0.9)"
-              };
-              return colorMapping[displayZone.color] || colorMapping["blue"];
-            })(),
-            color: "white",
-            textShadow: "1px 1px 2px rgba(0,0,0,0.7)",
-            lineHeight: "1.2"
-          }}
-          title={displayZone.name} // แสดง tooltip เมื่อ hover
-        >
-          {displayZone.name}
-        </div>
+    // คำนวณตำแหน่งปุ่มหมุนที่ไม่ได้รับผลกระทบจากการหมุน zone
+    const rotateButtonDistance = displayZone.shape === "triangle" 
+      ? (zoomLevel >= 2 ? Math.max(36, 48 / zoomLevel) : Math.max(48, Math.min(64, 54 * zoomLevel)))
+      : (zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(32, Math.min(48, 36 * zoomLevel)));
 
-        {/* เส้นขอบสำหรับสามเหลี่ยม */}
-        {displayZone.shape === "triangle" && (
-          <svg
-            className="absolute inset-0 pointer-events-none"
-            style={{ width: "100%", height: "100%" }}
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-          >
-            <polygon
-              points="50,0 0,100 100,100"
-              fill={(() => {
+    const rotateButtonSize = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
+    const finalRotateButtonSize = Math.max(24, Math.min(40, rotateButtonSize));
+
+    // คำนวณตำแหน่งปุ่มหมุนโดยไม่ให้หมุนตาม zone
+    const zoneCenterX = zone.x * zoomLevel + panOffset.x + (zone.width * zoomLevel) / 2;
+    const zoneCenterY = zone.y * zoomLevel + panOffset.y + (zone.height * zoomLevel) / 2;
+    const rotateButtonX = zoneCenterX - finalRotateButtonSize / 2;
+    const rotateButtonY = zoneCenterY - (zone.height * zoomLevel) / 2 - rotateButtonDistance - finalRotateButtonSize / 2;
+
+    return (
+      <div className="group">
+        {/* Zone หลัก */}
+        <div
+          key={zone.id}
+          className={`absolute ${displayZone.shape !== "triangle" ? zoneColors.bgOpacity : "bg-transparent"} ${
+            displayZone.shape !== "triangle" ? zoneColors.border : ""
+          } 
+            ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
+            transition-opacity cursor-move
+            ${isSelected && selectedZones.length > 1 ? "cursor-move" : ""}`}
+          style={{
+            left: zone.x * zoomLevel + panOffset.x,
+            top: zone.y * zoomLevel + panOffset.y,
+            width: zone.width * zoomLevel,
+            height: zone.height * zoomLevel,
+            zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
+            transform: `rotate(${zone.rotation || 0}deg)`,
+            transformOrigin: "center",
+            ...getShapeStyles(displayZone.shape),
+            ...((isSelected || isClickedSingle) && {
+              boxShadow: `0 0 0 3px ${isSelected ? "rgba(59, 130, 246, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+              ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
+            })
+          }}
+          onMouseDown={e => handleZoneMouseDown(e, zone)}
+          onDoubleClick={e => handleZoneDoubleClick(e, zone)}
+          onClick={e => {
+            e.stopPropagation();
+            // ถ้าไม่ได้กำลังลาก ให้เลือก zone นี้
+            if (!isDraggingZone && !isResizingZone && !isRotatingZone) {
+              setClickedZone(zone);
+              setClickedMarker(null);
+              // ล้างการเลือกแบบกลุ่ม
+              setSelectedMarkers([]);
+              setSelectedZones([]);
+            }
+          }}
+        >
+          <div
+            className={`absolute rounded font-medium ${
+              displayZone.shape === "triangle"
+                ? "left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2"
+                : displayZone.shape === "circle"
+                ? "top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
+                : "top-1 left-1"
+            }`}
+            style={{
+              fontSize: (() => {
+                const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
+                const baseFontSize = Math.max(6, Math.min(18, zoneSize / 6));
+                return `${Math.max(6, Math.min(baseFontSize, 16))}px`;
+              })(),
+              padding: (() => {
+                const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
+                if (zoneSize < 40) return "0px 1px";
+                if (zoneSize < 80) return "1px 2px";
+                if (zoneSize < 120) return "2px 4px";
+                return "4px 8px";
+              })(),
+              display: Math.min(zone.width * zoomLevel, zone.height * zoomLevel) < 25 ? "none" : "block",
+              maxWidth: `${Math.max(0, zone.width * zoomLevel - 8)}px`,
+              maxHeight: `${Math.max(0, zone.height * zoomLevel - 8)}px`,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              backgroundColor: (() => {
                 const colorMapping = {
-                  blue: "rgba(59, 130, 246, 0.3)",
-                  purple: "rgba(147, 51, 234, 0.3)",
-                  orange: "rgba(249, 115, 22, 0.3)",
-                  emerald: "rgba(16, 185, 129, 0.3)",
-                  rose: "rgba(244, 63, 94, 0.3)",
-                  cyan: "rgba(6, 182, 212, 0.3)",
-                  amber: "rgba(245, 158, 11, 0.3)"
+                  blue: "rgba(59, 130, 246, 0.9)",
+                  purple: "rgba(147, 51, 234, 0.9)",
+                  orange: "rgba(249, 115, 22, 0.9)",
+                  emerald: "rgba(16, 185, 129, 0.9)",
+                  rose: "rgba(244, 63, 94, 0.9)",
+                  cyan: "rgba(6, 182, 212, 0.9)",
+                  amber: "rgba(245, 158, 11, 0.9)"
                 };
                 return colorMapping[displayZone.color] || colorMapping["blue"];
-              })()}
-              stroke={
-                isSelected
-                  ? "#3B82F6"
-                  : isClickedSingle
-                  ? "#EF4444"
-                  : {
-                      blue: "#3B82F6",
-                      purple: "#9333EA",
-                      orange: "#F97316",
-                      emerald: "#10B981",
-                      rose: "#F43F5E",
-                      cyan: "#06B6D4",
-                      amber: "#F59E0B"
-                    }[displayZone.color] || "#3B82F6"
-              }
-              strokeWidth="2"
-              strokeDasharray={isSelected || isClickedSingle ? "none" : "4,2"}
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        )}
+              })(),
+              color: "white",
+              textShadow: "1px 1px 2px rgba(0,0,0,0.7)",
+              lineHeight: "1.2"
+            }}
+            title={displayZone.name}
+          >
+            {displayZone.name}
+          </div>
 
-        {/* จุดจับสำหรับหมุน */}
+          {/* เส้นขอบสำหรับสามเหลี่ยม */}
+          {displayZone.shape === "triangle" && (
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              style={{ 
+                width: "100%", 
+                height: "100%"
+              }}
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+            >
+              <polygon
+                points="50,0 0,100 100,100"
+                fill={(() => {
+                  const colorMapping = {
+                    blue: "rgba(59, 130, 246, 0.3)",
+                    purple: "rgba(147, 51, 234, 0.3)",
+                    orange: "rgba(249, 115, 22, 0.3)",
+                    emerald: "rgba(16, 185, 129, 0.3)",
+                    rose: "rgba(244, 63, 94, 0.3)",
+                    cyan: "rgba(6, 182, 212, 0.3)",
+                    amber: "rgba(245, 158, 11, 0.3)"
+                  };
+                  return colorMapping[displayZone.color] || colorMapping["blue"];
+                })()}
+                stroke={
+                  isSelected
+                    ? "#3B82F6"
+                    : isClickedSingle
+                    ? "#EF4444"
+                    : {
+                        blue: "#3B82F6",
+                        purple: "#9333EA",
+                        orange: "#F97316",
+                        emerald: "#10B981",
+                        rose: "#F43F5E",
+                        cyan: "#06B6D4",
+                        amber: "#F59E0B"
+                      }[displayZone.color] || "#3B82F6"
+                }
+                strokeWidth="2"
+                strokeDasharray={isSelected || isClickedSingle ? "none" : "4,2"}
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+          )}
+
+          {/* จุดจับสำหรับปรับขนาด */}
+          {resizeHandles.map(handle => {
+            // คำนวณขนาดจุดจับที่เหมาะสม - ปรับให้มองเห็นได้ดีแม้เมื่อ zoom มาก
+            const zoneDisplaySize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel);
+            let handleSize;
+
+            if (zoomLevel >= 2) {
+              // เมื่อ zoom มาก ให้จุดจับมีขนาดคงที่เพื่อให้คลิกได้ง่าย
+              handleSize = Math.max(16, Math.min(20, zoneDisplaySize / 10));
+            } else {
+              // zoom ปกติ
+              handleSize = zoneDisplaySize > 200 ? 20 : Math.max(12, 16 * zoomLevel);
+            }
+
+            handleSize = Math.max(12, Math.min(24, handleSize)); // จำกัดขนาดขั้นต่ำและสูงสุด
+            const handleOffset = handleSize / 2;
+
+            return (
+              <div
+                key={handle.position}
+                className={`absolute bg-white border-3 ${zoneColors.border} rounded-full 
+                opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl ring-1 ring-gray-300`}
+                style={{
+                  ...handle.style,
+                  // ปรับตำแหน่งให้ถูกต้องตามขนาดจุดจับ
+                  ...(handle.style.top === -5 && { top: -handleOffset }),
+                  ...(handle.style.bottom === -5 && { bottom: -handleOffset }),
+                  ...(handle.style.left === -5 && { left: -handleOffset }),
+                  ...(handle.style.right === -5 && { right: -handleOffset }),
+                  width: `${handleSize}px`,
+                  height: `${handleSize}px`,
+                  cursor: handle.cursor,
+                  zIndex: 1001,
+                  boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
+                }}
+                onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
+              />
+            );
+          })}
+        </div>
+
+        {/* ปุ่มหมุนแยกต่างหาก - ไม่ได้รับผลกระทบจากการหมุน zone */}
         <div
-          className="absolute left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-xl border-2 border-gray-300
-            flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          key={`${zone.id}-rotate`}
+          className={`absolute bg-white rounded-full shadow-xl border-2 border-gray-300 flex items-center justify-center cursor-pointer transition-opacity duration-200
+            opacity-0 group-hover:opacity-100`}
           style={{
-            top: (() => {
-              // ปรับระยะห่างและขนาดให้เหมาะสมกับ zoom level
-              const distance = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(32, Math.min(48, 36 * zoomLevel));
-              return `-${distance}px`;
-            })(),
-            width: (() => {
-              const size = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
-              return `${Math.max(24, Math.min(40, size))}px`;
-            })(),
-            height: (() => {
-              const size = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
-              return `${Math.max(24, Math.min(40, size))}px`;
-            })(),
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
+            left: rotateButtonX,
+            top: rotateButtonY,
+            width: `${finalRotateButtonSize}px`,
+            height: `${finalRotateButtonSize}px`,
+            zIndex: 1002, // สูงกว่า resize handles
+            pointerEvents: "auto",
+            background: "linear-gradient(180deg, #fff 80%, #e0e7ef 100%)",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px white"
           }}
-          onMouseDown={e => handleZoneMouseDown(e, zone, "rotate")}
+          onMouseDown={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleZoneMouseDown(e, zone, "rotate");
+          }}
           title="หมุนพื้นที่"
         >
           <svg
             className="text-gray-600"
             style={{
-              width: (() => {
-                const size = zoomLevel >= 2 ? Math.max(14, 20 / zoomLevel) : Math.max(16, Math.min(24, 20 * zoomLevel));
-                return `${Math.max(14, Math.min(20, size))}px`;
-              })(),
-              height: (() => {
-                const size = zoomLevel >= 2 ? Math.max(14, 20 / zoomLevel) : Math.max(16, Math.min(24, 20 * zoomLevel));
-                return `${Math.max(14, Math.min(20, size))}px`;
-              })()
+              width: `${Math.max(14, Math.min(20, finalRotateButtonSize * 0.6))}px`,
+              height: `${Math.max(14, Math.min(20, finalRotateButtonSize * 0.6))}px`
             }}
             viewBox="0 0 24 24"
             fill="none"
@@ -2345,46 +2441,6 @@ export default function VillageMap() {
             />
           </svg>
         </div>
-
-        {/* จุดจับสำหรับปรับขนาด */}
-        {resizeHandles.map(handle => {
-          // คำนวณขนาดจุดจับที่เหมาะสม - ปรับให้มองเห็นได้ดีแม้เมื่อ zoom มาก
-          const zoneDisplaySize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel);
-          let handleSize;
-
-          if (zoomLevel >= 2) {
-            // เมื่อ zoom มาก ให้จุดจับมีขนาดคงที่เพื่อให้คลิกได้ง่าย
-            handleSize = Math.max(16, Math.min(20, zoneDisplaySize / 10));
-          } else {
-            // zoom ปกติ
-            handleSize = zoneDisplaySize > 200 ? 20 : Math.max(12, 16 * zoomLevel);
-          }
-
-          handleSize = Math.max(12, Math.min(24, handleSize)); // จำกัดขนาดขั้นต่ำและสูงสุด
-          const handleOffset = handleSize / 2;
-
-          return (
-            <div
-              key={handle.position}
-              className={`absolute bg-white border-3 ${zoneColors.border} rounded-full 
-              opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl ring-1 ring-gray-300`}
-              style={{
-                ...handle.style,
-                // ปรับตำแหน่งให้ถูกต้องตามขนาดจุดจับ
-                ...(handle.style.top === -5 && { top: -handleOffset }),
-                ...(handle.style.bottom === -5 && { bottom: -handleOffset }),
-                ...(handle.style.left === -5 && { left: -handleOffset }),
-                ...(handle.style.right === -5 && { right: -handleOffset }),
-                width: `${handleSize}px`,
-                height: `${handleSize}px`,
-                cursor: handle.cursor,
-                zIndex: 1001,
-                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
-              }}
-              onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
-            />
-          );
-        })}
       </div>
     );
   };
@@ -2893,6 +2949,106 @@ export default function VillageMap() {
               {markers.map(marker => renderMarker(marker, true))}
             </div>
 
+            <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-medium">Zoom: {Math.round(zoomLevel * 100)}%</span>
+                  {(panOffset.x !== 0 || panOffset.y !== 0) && (
+                    <span className="ml-2 text-xs">
+                      Pan: ({Math.round(panOffset.x)}, {Math.round(panOffset.y)})
+                    </span>
+                  )}
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={undo}
+                    disabled={currentIndex < 0}
+                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ย้อนกลับการกระทำ (Ctrl+Z)"
+                  >
+                    ↶
+                  </button>
+                  <button
+                    onClick={redo}
+                    disabled={currentIndex >= history.length - 1}
+                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ทำซ้ำการกระทำ (Ctrl+Shift+Z)"
+                  >
+                    ↷
+                  </button>
+                  <button
+                    onClick={resetZoomAndPan}
+                    className="w-8 h-8 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="รีเซ็ต Zoom และ Pan (Ctrl+0)"
+                  >
+                    🏠
+                  </button>
+                  <button
+                    onClick={clearSelection}
+                    className="w-8 h-8 bg-purple-500 text-white rounded-full text-sm hover:bg-purple-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ยกเลิกการเลือก (ESC)"
+                  >
+                    ✕
+                  </button>
+                  {(copiedZones.length > 0 || copiedMarkers.length > 0) && (
+                    <button
+                      onClick={() => {
+                        if (copiedZones.length > 0) pasteZones();
+                        if (copiedMarkers.length > 0) pasteMarkers();
+                      }}
+                      className="w-8 h-8 bg-green-500 text-white rounded-full text-sm hover:bg-green-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                      title={(() => {
+                        const items = [];
+                        if (copiedZones.length > 0) items.push(`${copiedZones.length} zones`);
+                        if (copiedMarkers.length > 0) items.push(`${copiedMarkers.length} markers`);
+                        return `วาง ${items.join(" และ ")} (Ctrl+V)`;
+                      })()}
+                    >
+                      📋
+                    </button>
+                  )}
+                  {(selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone) && (
+                    <button
+                      onClick={deleteSelectedObjects}
+                      className="w-8 h-8 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                      title={(() => {
+                        if (clickedMarker) return `ลบ Marker "${clickedMarker.name}" (Delete)`;
+                        if (clickedZone) return `ลบ Zone "${clickedZone.name}" (Delete)`;
+                        const items = [];
+                        if (selectedMarkers.length > 0) items.push(`${selectedMarkers.length} markers`);
+                        if (selectedZones.length > 0) items.push(`${selectedZones.length} zones`);
+                        return `ลบ ${items.join(" และ ")} (Delete)`;
+                      })()}
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="mb-2">
+                <label className="block text-sm font-medium text-blue-800 mb-1">รูปทรงกลุ่ม:</label>
+                <div className="flex space-x-2">
+                  {zoneShapeOptions.map(shape => (
+                    <button
+                      key={shape.value}
+                      onClick={() => setSelectedZoneShape(shape.value)}
+                      className={`px-2 py-1 rounded text-xs transition-colors ${
+                        selectedZoneShape === shape.value
+                          ? "bg-blue-500 text-white"
+                          : "bg-white text-blue-700 hover:bg-blue-100"
+                      }`}
+                      title={shape.label}
+                    >
+                      {shape.icon} {shape.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+
+
+
             {/* คำแนะนำการใช้งาน */}
             <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
               <div className="font-medium mb-1">วิธีการใช้งาน:</div>
@@ -3004,102 +3160,7 @@ export default function VillageMap() {
             )}
 
             {/* แสดงข้อมูล Zoom */}
-            <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-medium">Zoom: {Math.round(zoomLevel * 100)}%</span>
-                  {(panOffset.x !== 0 || panOffset.y !== 0) && (
-                    <span className="ml-2 text-xs">
-                      Pan: ({Math.round(panOffset.x)}, {Math.round(panOffset.y)})
-                    </span>
-                  )}
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={undo}
-                    disabled={currentIndex < 0}
-                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ย้อนกลับการกระทำ (Ctrl+Z)"
-                  >
-                    ↶
-                  </button>
-                  <button
-                    onClick={redo}
-                    disabled={currentIndex >= history.length - 1}
-                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ทำซ้ำการกระทำ (Ctrl+Shift+Z)"
-                  >
-                    ↷
-                  </button>
-                  <button
-                    onClick={resetZoomAndPan}
-                    className="w-8 h-8 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="รีเซ็ต Zoom และ Pan (Ctrl+0)"
-                  >
-                    🏠
-                  </button>
-                  <button
-                    onClick={clearSelection}
-                    className="w-8 h-8 bg-purple-500 text-white rounded-full text-sm hover:bg-purple-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ยกเลิกการเลือก (ESC)"
-                  >
-                    ✕
-                  </button>
-                  {(copiedZones.length > 0 || copiedMarkers.length > 0) && (
-                    <button
-                      onClick={() => {
-                        if (copiedZones.length > 0) pasteZones();
-                        if (copiedMarkers.length > 0) pasteMarkers();
-                      }}
-                      className="w-8 h-8 bg-green-500 text-white rounded-full text-sm hover:bg-green-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                      title={(() => {
-                        const items = [];
-                        if (copiedZones.length > 0) items.push(`${copiedZones.length} zones`);
-                        if (copiedMarkers.length > 0) items.push(`${copiedMarkers.length} markers`);
-                        return `วาง ${items.join(" และ ")} (Ctrl+V)`;
-                      })()}
-                    >
-                      📋
-                    </button>
-                  )}
-                  {(selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone) && (
-                    <button
-                      onClick={deleteSelectedObjects}
-                      className="w-8 h-8 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                      title={(() => {
-                        if (clickedMarker) return `ลบ Marker "${clickedMarker.name}" (Delete)`;
-                        if (clickedZone) return `ลบ Zone "${clickedZone.name}" (Delete)`;
-                        const items = [];
-                        if (selectedMarkers.length > 0) items.push(`${selectedMarkers.length} markers`);
-                        if (selectedZones.length > 0) items.push(`${selectedZones.length} zones`);
-                        return `ลบ ${items.join(" และ ")} (Delete)`;
-                      })()}
-                    >
-                      🗑️
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="mb-2">
-                <label className="block text-sm font-medium text-blue-800 mb-1">รูปทรงกลุ่ม:</label>
-                <div className="flex space-x-2">
-                  {zoneShapeOptions.map(shape => (
-                    <button
-                      key={shape.value}
-                      onClick={() => setSelectedZoneShape(shape.value)}
-                      className={`px-2 py-1 rounded text-xs transition-colors ${
-                        selectedZoneShape === shape.value
-                          ? "bg-blue-500 text-white"
-                          : "bg-white text-blue-700 hover:bg-blue-100"
-                      }`}
-                      title={shape.label}
-                    >
-                      {shape.icon} {shape.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+
           </div>
 
           {/* รายการกลุ่มด้านขวา */}

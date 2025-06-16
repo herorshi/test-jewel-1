@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import VoiceControl from "./VoiceControl";
 
 // เพิ่ม type สำหรับ action history
 const ACTION_TYPES = {
@@ -72,9 +71,6 @@ export default function VillageMap() {
   const [groupDragOffset, setGroupDragOffset] = useState({ x: 0, y: 0 });
   const [dragReference, setDragReference] = useState(null);
   const [justFinishedGroupSelection, setJustFinishedGroupSelection] = useState(false);
-  // เพิ่ม state สำหรับการเลือก object เดี่ยว
-  const [clickedMarker, setClickedMarker] = useState(null);
-  const [clickedZone, setClickedZone] = useState(null);
   // เพิ่ม state สำหรับ zoom
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -82,11 +78,6 @@ export default function VillageMap() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const containerRef = useRef(null);
-  // เพิ่ม state สำหรับ copy/paste zone และ marker
-  const [copiedZones, setCopiedZones] = useState([]);
-  const [copiedMarkers, setCopiedMarkers] = useState([]);
-  // เพิ่ม state สำหรับ force re-render
-  const [forceRenderKey, setForceRenderKey] = useState(0);
 
   // สีและชื่อสี
   const colorOptions = [
@@ -111,9 +102,9 @@ export default function VillageMap() {
 
   // เพิ่มตัวเลือกรูปทรง zone
   const zoneShapeOptions = [
-    { value: "rectangle", label: "", icon: "⬛" },
-    { value: "circle", label: "", icon: "🔵" },
-    { value: "triangle", label: "", icon: "🔺" }
+    { value: "rectangle", label: "สี่เหลี่ยม", icon: "⬛" },
+    { value: "circle", label: "วงกลม", icon: "🔵" },
+    { value: "triangle", label: "สามเหลี่ยม", icon: "🔺" }
   ];
 
   // ระยะทางขั้นต่ำที่ถือว่าเป็นการลาก (pixels)
@@ -124,40 +115,19 @@ export default function VillageMap() {
   const MIN_MARKER_SIZE = 1; // ขนาดต่ำสุด 16px
   const MAX_MARKER_SIZE = 16; // ขนาดสูงสุด 48px
 
-  // ตรวจสอบว่าจุดอยู่ในกลุ่มหรือไม่ (รองรับการหมุน)
+  // ตรวจสอบว่าจุดอยู่ในกลุ่มหรือไม่
   const isPointInZone = (x, y, zone) => {
-    const { shape = "rectangle", x: zx, y: zy, width, height, rotation = 0 } = zone;
-
-    // หาจุดกึ่งกลางของ zone
-    const centerX = zx + width / 2;
-    const centerY = zy + height / 2;
-
-    // ถ้ามีการหมุน ต้องแปลงพิกัดจุดกลับไปเป็นพิกัดเดิมก่อนการหมุน
-    let testX = x;
-    let testY = y;
-
-    if (rotation !== 0) {
-      // แปลงองศาเป็นเรเดียน
-      const rad = (-rotation * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-
-      // แปลงพิกัดให้สัมพันธ์กับจุดกึ่งกลาง
-      const relativeX = x - centerX;
-      const relativeY = y - centerY;
-
-      // หมุนจุดกลับไปตำแหน่งเดิม (inverse rotation)
-      testX = centerX + (relativeX * cos - relativeY * sin);
-      testY = centerY + (relativeX * sin + relativeY * cos);
-    }
+    const { shape = "rectangle", x: zx, y: zy, width, height } = zone;
 
     switch (shape) {
       case "circle":
         // สำหรับวงกลม: ตรวจสอบระยะห่างจากจุดกึ่งกลาง
+        const centerX = zx + width / 2;
+        const centerY = zy + height / 2;
         const radiusX = width / 2;
         const radiusY = height / 2;
-        const dx = (testX - centerX) / radiusX;
-        const dy = (testY - centerY) / radiusY;
+        const dx = (x - centerX) / radiusX;
+        const dy = (y - centerY) / radiusY;
         return dx * dx + dy * dy <= 1;
 
       case "triangle":
@@ -173,9 +143,9 @@ export default function VillageMap() {
           return (px - bx) * (ay - by) - (ax - bx) * (py - by);
         };
 
-        const d1 = sign(testX, testY, x1, y1, x2, y2);
-        const d2 = sign(testX, testY, x2, y2, x3, y3);
-        const d3 = sign(testX, testY, x3, y3, x1, y1);
+        const d1 = sign(x, y, x1, y1, x2, y2);
+        const d2 = sign(x, y, x2, y2, x3, y3);
+        const d3 = sign(x, y, x3, y3, x1, y1);
 
         const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
         const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
@@ -184,35 +154,13 @@ export default function VillageMap() {
 
       default:
         // rectangle
-        return testX >= zx && testX <= zx + width && testY >= zy && testY <= zy + height;
+        return x >= zx && x <= zx + width && y >= zy && y <= zy + height;
     }
   };
 
   // หากลุ่มที่ marker อยู่
   const findMarkerZone = marker => {
     return zones.find(zone => isPointInZone(marker.x, marker.y, zone));
-  };
-
-  // ฟังก์ชันสำหรับอัพเดทกลุ่มของ markers ทันทีหลังจากการเปลี่ยนแปลง zone
-  const updateMarkersGroup = () => {
-    setMarkers(prevMarkers => {
-      let hasChanges = false;
-      const updatedMarkers = prevMarkers.map(marker => {
-        const zone = findMarkerZone(marker);
-        const newGroup = zone ? zone.name : "Marker";
-        if (marker.group !== newGroup) {
-          hasChanges = true;
-          console.log(`Marker "${marker.name}" ย้ายจากกลุ่ม "${marker.group}" ไปยัง "${newGroup}"`);
-        }
-        return { ...marker, group: newGroup };
-      });
-
-      if (hasChanges) {
-        console.log("อัพเดทกลุ่มของ markers เรียบร้อยแล้ว");
-      }
-
-      return updatedMarkers;
-    });
   };
 
   // คำนวณระยะทางระหว่างสองจุด
@@ -222,23 +170,18 @@ export default function VillageMap() {
     return Math.sqrt(dx * dx + dy * dy);
   };
 
-  // อัพเดทกลุ่มของ marker เมื่อตำแหน่งเปลี่ยน (ปิดการใช้งานเพื่อไม่ให้สร้าง marker ใหม่)
-  // useEffect(
-  //   () => {
-  //     setMarkers(prevMarkers =>
-  //       prevMarkers.map(marker => {
-  //         const zone = findMarkerZone(marker);
-  //         const newGroup = zone ? zone.name : "Marker";
-  //         // อัพเดทเฉพาะเมื่อกลุ่มเปลี่ยนแปลง
-  //         if (marker.group !== newGroup) {
-  //           return { ...marker, group: newGroup };
-  //         }
-  //         return marker;
-  //       })
-  //     );
-  //   },
-  //   [zones, markers.length] // เพิ่ม markers.length เพื่อให้อัพเดทเมื่อมี marker ใหม่
-  // );
+  // อัพเดทกลุ่มของ marker เมื่อตำแหน่งเปลี่ยน
+  useEffect(
+    () => {
+      setMarkers(prevMarkers =>
+        prevMarkers.map(marker => {
+          const zone = findMarkerZone(marker);
+          return zone ? { ...marker, group: zone.name } : marker;
+        })
+      );
+    },
+    [zones]
+  );
 
   // เมื่อสร้างกลุ่มใหม่ให้กำหนดค่าเริ่มต้นเป็นแสดง
   useEffect(
@@ -262,988 +205,8 @@ export default function VillageMap() {
     };
   };
 
-  // ฟังก์ชันตรวจจับรูปแบบพื้นที่ (ปรับปรุงใหม่)
-  const analyzeAreaPattern = (imageData, x, y) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const targetColor = getPixelColor(imageData, x, y);
-
-    // ตรวจสอบว่าเป็นสีขอบหรือไม่
-    if (isEdgeColor(targetColor)) {
-      return { type: "edge", direction: null };
-    }
-
-    // ตรวจสอบรูปแบบการกระจายตัวของสีเดียวกัน
-    const scanRadius = 50;
-    const directions = {
-      horizontal: { count: 0, maxStreak: 0, currentStreak: 0 },
-      vertical: { count: 0, maxStreak: 0, currentStreak: 0 }
-    };
-
-    // สแกนแนวนอน
-    for (let dx = -scanRadius; dx <= scanRadius; dx++) {
-      const checkX = x + dx;
-      if (checkX >= 0 && checkX < width) {
-        const color = getPixelColor(imageData, checkX, y);
-        if (colorsSimilar(color, targetColor, 15)) {
-          directions.horizontal.count++;
-          directions.horizontal.currentStreak++;
-          directions.horizontal.maxStreak = Math.max(directions.horizontal.maxStreak, directions.horizontal.currentStreak);
-        } else {
-          directions.horizontal.currentStreak = 0;
-        }
-      }
-    }
-
-    // สแกนแนวตั้ง
-    directions.vertical.currentStreak = 0;
-    for (let dy = -scanRadius; dy <= scanRadius; dy++) {
-      const checkY = y + dy;
-      if (checkY >= 0 && checkY < height) {
-        const color = getPixelColor(imageData, x, checkY);
-        if (colorsSimilar(color, targetColor, 15)) {
-          directions.vertical.count++;
-          directions.vertical.currentStreak++;
-          directions.vertical.maxStreak = Math.max(directions.vertical.maxStreak, directions.vertical.currentStreak);
-        } else {
-          directions.vertical.currentStreak = 0;
-        }
-      }
-    }
-
-    // วิเคราะห์รูปแบบ
-    const hRatio = directions.horizontal.count / (scanRadius * 2 + 1);
-    const vRatio = directions.vertical.count / (scanRadius * 2 + 1);
-    const hStreak = directions.horizontal.maxStreak;
-    const vStreak = directions.vertical.maxStreak;
-
-    // ตรวจจับประเภทพื้นที่
-    if (hRatio > 0.7 && hStreak > scanRadius * 0.6) {
-      return { type: "corridor", direction: "horizontal", strength: hRatio };
-    } else if (vRatio > 0.7 && vStreak > scanRadius * 0.6) {
-      return { type: "corridor", direction: "vertical", strength: vRatio };
-    } else if (hRatio > 0.4 && vRatio > 0.4) {
-      return { type: "room", direction: "both", strength: (hRatio + vRatio) / 2 };
-    } else {
-      return { type: "irregular", direction: null, strength: Math.max(hRatio, vRatio) };
-    }
-  };
-
-  // ฟังก์ชันสร้างขอบเขตสำหรับถนน/ทางเดิน
-  const createCorridorBounds = (imageData, x, y, direction, targetColor) => {
-    const width = imageData.width;
-    const height = imageData.height;
-
-    let minX = x,
-      maxX = x,
-      minY = y,
-      maxY = y;
-
-    if (direction === "horizontal") {
-      // ขยายไปทางซ้าย
-      for (let checkX = x - 1; checkX >= 0; checkX--) {
-        const color = getPixelColor(imageData, checkX, y);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        minX = checkX;
-      }
-
-      // ขยายไปทางขวา
-      for (let checkX = x + 1; checkX < width; checkX++) {
-        const color = getPixelColor(imageData, checkX, y);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        maxX = checkX;
-      }
-
-      // หาความกว้างในแนวตั้ง
-      for (let checkY = y - 1; checkY >= 0; checkY--) {
-        const color = getPixelColor(imageData, x, checkY);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        minY = checkY;
-      }
-
-      for (let checkY = y + 1; checkY < height; checkY++) {
-        const color = getPixelColor(imageData, x, checkY);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        maxY = checkY;
-      }
-    } else if (direction === "vertical") {
-      // ขยายไปทางบน
-      for (let checkY = y - 1; checkY >= 0; checkY--) {
-        const color = getPixelColor(imageData, x, checkY);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        minY = checkY;
-      }
-
-      // ขยายไปทางล่าง
-      for (let checkY = y + 1; checkY < height; checkY++) {
-        const color = getPixelColor(imageData, x, checkY);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        maxY = checkY;
-      }
-
-      // หาความกว้างในแนวนอน
-      for (let checkX = x - 1; checkX >= 0; checkX--) {
-        const color = getPixelColor(imageData, checkX, y);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        minX = checkX;
-      }
-
-      for (let checkX = x + 1; checkX < width; checkX++) {
-        const color = getPixelColor(imageData, checkX, y);
-        if (!colorsSimilar(color, targetColor, 12)) break;
-        maxX = checkX;
-      }
-    }
-
-    return { minX, maxX, minY, maxY };
-  };
-
-  // ฟังก์ชันตรวจจับขอบเขตพื้นที่อัตโนมัติ (ปรับปรุงใหม่)
-  const detectAreaBounds = (x, y) => {
-    return new Promise(resolve => {
-      console.log(`🔍 เริ่มตรวจจับพื้นที่ที่ (${x.toFixed(1)}, ${y.toFixed(1)}) - ตรวจจับเฉพาะพื้นที่เชื่อมต่อกัน`);
-
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      const image = imageRef.current;
-
-      if (!image) {
-        console.log("❌ ไม่พบ image reference");
-        resolve(null);
-        return;
-      }
-
-      // ตั้งค่าขนาด canvas ให้เท่ากับรูปภาพ
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      console.log(`📐 ขนาด Canvas: ${canvas.width}x${canvas.height}`);
-
-      // วาดรูปภาพลงใน canvas
-      ctx.drawImage(image, 0, 0);
-
-      // แปลงตำแหน่งจาก display coordinates เป็น natural image coordinates
-      const scaleX = image.naturalWidth / image.offsetWidth;
-      const scaleY = image.naturalHeight / image.offsetHeight;
-      const imageX = Math.floor(x * scaleX);
-      const imageY = Math.floor(y * scaleY);
-
-      console.log(`📍 คลิกที่ display (${x.toFixed(1)}, ${y.toFixed(1)}) -> image (${imageX}, ${imageY})`);
-      console.log(`🔍 อัตราส่วน: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y`);
-
-      try {
-        // ดึงข้อมูลสีที่จุดที่คลิก
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-        // ประกาศตัวแปรสีเป้าหมาย (ใช้ let เพื่อให้สามารถ reassign ได้)
-        let targetPixel = getPixelColor(imageData, imageX, imageY);
-        console.log(`🎨 สีเป้าหมาย: RGB(${targetPixel.r}, ${targetPixel.g}, ${targetPixel.b})`);
-
-        // ตรวจสอบว่าเป็นสีขอบหรือไม่ (แต่ยืดหยุ่นขึ้น)
-        if (isEdgeColor(targetPixel)) {
-          console.log(`⚠️ คลิกที่สีขอบ RGB(${targetPixel.r}, ${targetPixel.g}, ${targetPixel.b}) - ลองหาสีใกล้เคียง...`);
-
-          // ลองหาสีที่ไม่ใช่ขอบในรัศมี 5 pixels
-          let alternativeColor = null;
-          for (let dy = -5; dy <= 5 && !alternativeColor; dy++) {
-            for (let dx = -5; dx <= 5 && !alternativeColor; dx++) {
-              const checkX = imageX + dx;
-              const checkY = imageY + dy;
-              if (checkX >= 0 && checkX < canvas.width && checkY >= 0 && checkY < canvas.height) {
-                const checkColor = getPixelColor(imageData, checkX, checkY);
-                if (!isEdgeColor(checkColor)) {
-                  alternativeColor = checkColor;
-                  console.log(
-                    `🔍 พบสีใกล้เคียง RGB(${checkColor.r}, ${checkColor.g}, ${checkColor.b}) ที่ offset (${dx}, ${dy})`
-                  );
-                }
-              }
-            }
-          }
-
-          if (alternativeColor) {
-            targetPixel = alternativeColor;
-          } else {
-            console.log("❌ ไม่พบสีใกล้เคียงที่เหมาะสม");
-            resolve(null);
-            return;
-          }
-        }
-
-        console.log("🔍 กำลังตรวจจับพื้นที่เชื่อมต่อกันรอบจุดที่คลิก...");
-
-        // ใช้ flood fill เฉพาะพื้นที่ที่เชื่อมต่อกันจากจุดคลิก (วิธีเดิมที่ทำงานได้ดี)
-        const connectedRegion = floodFillFromPoint(imageData, imageX, imageY, targetPixel, 15);
-
-        if (!connectedRegion || connectedRegion.pixelCount < 1) {
-          console.log("❌ ไม่พบพื้นที่เชื่อมต่อกันที่เหมาะสม");
-          resolve(null);
-          return;
-        }
-
-        console.log(
-          `📦 พบพื้นที่เชื่อมต่อกัน: ${connectedRegion.pixelCount} pixels, ${connectedRegion.width}x${connectedRegion.height}`
-        );
-
-        // ปรับปรุงขอบเขตให้แม่นยำ
-        const optimizedBounds = optimizeBounds(imageData, connectedRegion, targetPixel, 15);
-        const bestRegion = {
-          minX: optimizedBounds.minX,
-          maxX: optimizedBounds.maxX,
-          minY: optimizedBounds.minY,
-          maxY: optimizedBounds.maxY,
-          width: optimizedBounds.maxX - optimizedBounds.minX + 1,
-          height: optimizedBounds.maxY - optimizedBounds.minY + 1,
-          pixelCount: connectedRegion.pixelCount,
-          areaType: "connected"
-        };
-
-        console.log(`✨ ขอบเขตสุดท้าย: ${bestRegion.width}x${bestRegion.height}`);
-
-        // แปลงกลับเป็น display coordinates
-        const displayBounds = {
-          x: bestRegion.minX / scaleX,
-          y: bestRegion.minY / scaleY,
-          width: bestRegion.width / scaleX,
-          height: bestRegion.height / scaleY,
-          areaType: "complete", // บอกว่าเป็นการตรวจจับแบบครบถ้วน
-          pixelCount: bestRegion.pixelCount
-        };
-
-        // ตรวจสอบขนาดขั้นต่ำและสูงสุด
-        const area = displayBounds.width * displayBounds.height;
-        const imageArea = image.offsetWidth * image.offsetHeight;
-        const areaRatio = area / imageArea;
-
-        console.log(`📊 ขนาด: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)}`);
-        console.log(`📊 อัตราส่วน: ${(areaRatio * 100).toFixed(2)}% ของภาพ`);
-        console.log(`📊 จำนวน pixels: ${bestRegion.pixelCount.toLocaleString()}`);
-
-        // เกณฑ์การยอมรับ - ยอมรับทุกขนาด ไม่มีขีดจำกัดขั้นต่ำ
-        const maxRatio = 0.5; // จำกัดเฉพาะขนาดสูงสุดเพื่อป้องกัน zone ใหญ่เกินไป
-
-        if (displayBounds.width > 0 && displayBounds.height > 0 && areaRatio <= maxRatio) {
-          console.log(
-            `✅ สร้าง Zone เชื่อมต่อกัน: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)} (${(
-              areaRatio * 100
-            ).toFixed(2)}%)`
-          );
-          resolve(displayBounds);
-        } else {
-          console.log(
-            `❌ ขนาดไม่เหมาะสม: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)} (${(
-              areaRatio * 100
-            ).toFixed(2)}%)`
-          );
-          resolve(null);
-        }
-      } catch (error) {
-        console.log("❌ ข้อผิดพลาดในการตรวจจับพื้นที่:", error);
-        resolve(null);
-      }
-    });
-  };
-
-  // ฟังก์ชันดึงสีของ pixel
-  const getPixelColor = (imageData, x, y) => {
-    const index = (y * imageData.width + x) * 4;
-    return {
-      r: imageData.data[index],
-      g: imageData.data[index + 1],
-      b: imageData.data[index + 2],
-      a: imageData.data[index + 3]
-    };
-  };
-
-  // ฟังก์ชันตรวจสอบว่าสีเหมือนกันหรือไม่ (ปรับให้ยืดหยุ่นขึ้น)
-  const colorsSimilar = (color1, color2, tolerance = 12) => {
-    // ใช้ Euclidean distance สำหรับความแม่นยำที่ดีขึ้น
-    const dr = color1.r - color2.r;
-    const dg = color1.g - color2.g;
-    const db = color1.b - color2.b;
-    const distance = Math.sqrt(dr * dr + dg * dg + db * db);
-
-    // ปรับ tolerance ให้เหมาะสมกับ euclidean distance
-    const euclideanTolerance = tolerance * 1.732; // sqrt(3) สำหรับ 3D space
-
-    return distance <= euclideanTolerance;
-  };
-
-  // ฟังก์ชันตรวจสอบว่าเป็นสีขอบ (เส้นแบ่ง) หรือไม่
-  const isEdgeColor = color => {
-    // ตรวจจับสีที่เป็นเส้นขอบ เช่น สีดำ สีเทาเข้ม หรือสีที่ใกล้เคียง
-    const isDark = color.r < 80 && color.g < 80 && color.b < 80;
-    const isGray = Math.abs(color.r - color.g) < 20 && Math.abs(color.g - color.b) < 20 && Math.abs(color.r - color.b) < 20;
-    return isDark || (isGray && color.r < 120);
-  };
-
-  // ฟังก์ชันตรวจสอบว่าควรหยุดการขยายหรือไม่
-  const shouldStopExpansion = (currentColor, targetColor, neighborColor) => {
-    // หยุดถ้าสีปัจจุบันไม่เหมือนสีเป้าหมาย
-    if (!colorsSimilar(currentColor, targetColor)) {
-      return true;
-    }
-
-    // หยุดถ้าเจอสีขอบ
-    if (isEdgeColor(currentColor)) {
-      return true;
-    }
-
-    // หยุดถ้าเจอสีที่แตกต่างมากจากสีเป้าหมาย
-    const colorDifference =
-      Math.abs(currentColor.r - targetColor.r) +
-      Math.abs(currentColor.g - targetColor.g) +
-      Math.abs(currentColor.b - targetColor.b);
-
-    return colorDifference > 25; // หยุดถ้าผลรวมความแตกต่างสีมากกว่า 25
-  };
-
-  // ฟังก์ชัน flood fill แบบ Smart สำหรับห้อง/บล็อก
-  const smartFloodFill = (imageData, startX, startY, targetColor, areaType) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const visited = new Set();
-    const stack = [{ x: startX, y: startY }];
-
-    let minX = startX,
-      maxX = startX;
-    let minY = startY,
-      maxY = startY;
-    let pixelCount = 0;
-
-    // ปรับ parameters ตามประเภทพื้นที่
-    let maxPixels, tolerance;
-    switch (areaType.type) {
-      case "corridor":
-        maxPixels = 50000;
-        tolerance = 15;
-        break;
-      case "room":
-        maxPixels = 25000;
-        tolerance = 10;
-        break;
-      default:
-        maxPixels = 15000;
-        tolerance = 8;
-    }
-
-    while (stack.length > 0 && pixelCount < maxPixels) {
-      const { x, y } = stack.pop();
-      const key = `${x},${y}`;
-
-      if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
-        continue;
-      }
-
-      const currentColor = getPixelColor(imageData, x, y);
-
-      // ใช้ tolerance ที่เหมาะสมกับประเภทพื้นที่
-      if (!colorsSimilar(currentColor, targetColor, tolerance)) {
-        continue;
-      }
-
-      // ตรวจสอบว่าเป็นขอบเขตหรือไม่
-      if (isEdgeColor(currentColor)) {
-        continue;
-      }
-
-      visited.add(key);
-      pixelCount++;
-
-      // อัพเดทขอบเขต
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-
-      // เพิ่มจุดข้างเคียง
-      const neighbors = [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }];
-
-      for (const neighbor of neighbors) {
-        if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
-          stack.push(neighbor);
-        }
-      }
-    }
-
-    return { minX, maxX, minY, maxY, pixelCount };
-  };
-
-  // ฟังก์ชันหาขอบเขตที่แม่นยำสำหรับห้อง/บล็อก
-  const findRoomBounds = (imageData, x, y, targetColor) => {
-    const width = imageData.width;
-    const height = imageData.height;
-
-    // หาขอบเขตด้วยการสแกนจากจุดกลาง
-    let minX = x,
-      maxX = x,
-      minY = y,
-      maxY = y;
-
-    // สแกนหาขอบซ้าย
-    for (let checkX = x - 1; checkX >= 0; checkX--) {
-      let shouldStop = false;
-
-      // ตรวจสอบแนวตั้งที่ตำแหน่งนี้
-      for (let scanY = Math.max(0, y - 10); scanY <= Math.min(height - 1, y + 10); scanY++) {
-        const color = getPixelColor(imageData, checkX, scanY);
-        if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
-          shouldStop = true;
-          break;
-        }
-      }
-
-      if (shouldStop) break;
-      minX = checkX;
-    }
-
-    // สแกนหาขอบขวา
-    for (let checkX = x + 1; checkX < width; checkX++) {
-      let shouldStop = false;
-
-      for (let scanY = Math.max(0, y - 10); scanY <= Math.min(height - 1, y + 10); scanY++) {
-        const color = getPixelColor(imageData, checkX, scanY);
-        if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
-          shouldStop = true;
-          break;
-        }
-      }
-
-      if (shouldStop) break;
-      maxX = checkX;
-    }
-
-    // สแกนหาขอบบน
-    for (let checkY = y - 1; checkY >= 0; checkY--) {
-      let shouldStop = false;
-
-      for (let scanX = Math.max(0, minX); scanX <= Math.min(width - 1, maxX); scanX++) {
-        const color = getPixelColor(imageData, scanX, checkY);
-        if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
-          shouldStop = true;
-          break;
-        }
-      }
-
-      if (shouldStop) break;
-      minY = checkY;
-    }
-
-    // สแกนหาขอบล่าง
-    for (let checkY = y + 1; checkY < height; checkY++) {
-      let shouldStop = false;
-
-      for (let scanX = Math.max(0, minX); scanX <= Math.min(width - 1, maxX); scanX++) {
-        const color = getPixelColor(imageData, scanX, checkY);
-        if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
-          shouldStop = true;
-          break;
-        }
-      }
-
-      if (shouldStop) break;
-      maxY = checkY;
-    }
-
-    return { minX, maxX, minY, maxY };
-  };
-
-  // ฟังก์ชันหาพื้นที่สีเดียวกันทั้งหมดในภาพ (Complete Area Detection)
-  const findAllColorRegions = (imageData, targetColor, tolerance = 12) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const visited = new Array(width * height).fill(false);
-    const regions = [];
-
-    console.log(`🔍 กำลังสแกนสี RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b}) ทั้งภาพ...`);
-
-    // สแกนทุก pixel ในภาพ
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const index = y * width + x;
-
-        if (visited[index]) continue;
-
-        const currentColor = getPixelColor(imageData, x, y);
-
-        // ตรวจสอบว่าสีตรงกับที่ต้องการหรือไม่
-        if (!colorsSimilar(currentColor, targetColor, tolerance) || isEdgeColor(currentColor)) {
-          continue;
-        }
-
-        // เริ่ม flood fill จากจุดนี้
-        const region = floodFillRegion(imageData, x, y, targetColor, visited, tolerance);
-
-        // เก็บเฉพาะ region ที่มีขนาดเหมาะสม
-        if (region && region.pixelCount >= 50) {
-          regions.push(region);
-          console.log(`📦 พบพื้นที่: ${region.pixelCount} pixels, bounds: ${region.width}x${region.height}`);
-        }
-      }
-    }
-
-    console.log(`✅ พบทั้งหมด ${regions.length} พื้นที่`);
-    return regions;
-  };
-
-  // ฟังก์ชัน flood fill สำหรับหา region เดียว
-  const floodFillRegion = (imageData, startX, startY, targetColor, visited, tolerance) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const stack = [{ x: startX, y: startY }];
-
-    let minX = startX,
-      maxX = startX;
-    let minY = startY,
-      maxY = startY;
-    let pixelCount = 0;
-    const pixels = [];
-
-    while (stack.length > 0 && pixelCount < 100000) {
-      // จำกัดขนาดสูงสุด
-      const { x, y } = stack.pop();
-      const index = y * width + x;
-
-      if (x < 0 || x >= width || y < 0 || y >= height || visited[index]) {
-        continue;
-      }
-
-      const currentColor = getPixelColor(imageData, x, y);
-
-      if (!colorsSimilar(currentColor, targetColor, tolerance) || isEdgeColor(currentColor)) {
-        continue;
-      }
-
-      visited[index] = true;
-      pixelCount++;
-      pixels.push({ x, y });
-
-      // อัพเดทขอบเขต
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-
-      // เพิ่มจุดข้างเคียง (4-connected)
-      stack.push({ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 });
-    }
-
-    return {
-      minX,
-      maxX,
-      minY,
-      maxY,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
-      pixelCount,
-      pixels,
-      centerX: Math.floor((minX + maxX) / 2),
-      centerY: Math.floor((minY + maxY) / 2)
-    };
-  };
-
-  // ฟังก์ชันปรับขอบเขตให้แม่นยำขึ้น
-  const optimizeBounds = (imageData, region, targetColor, tolerance = 12) => {
-    let { minX, maxX, minY, maxY } = region;
-
-    // ปรับขอบเขตให้กระชับขึ้นโดยตรวจสอบขอบ
-    let hasContent = false;
-
-    // ตรวจสอบขอบซ้าย
-    for (let x = minX; x <= maxX; x++) {
-      hasContent = false;
-      for (let y = minY; y <= maxY; y++) {
-        const color = getPixelColor(imageData, x, y);
-        if (colorsSimilar(color, targetColor, tolerance) && !isEdgeColor(color)) {
-          hasContent = true;
-          break;
-        }
-      }
-      if (hasContent) {
-        minX = x;
-        break;
-      }
-    }
-
-    // ตรวจสอบขอบขวา
-    for (let x = maxX; x >= minX; x--) {
-      hasContent = false;
-      for (let y = minY; y <= maxY; y++) {
-        const color = getPixelColor(imageData, x, y);
-        if (colorsSimilar(color, targetColor, tolerance) && !isEdgeColor(color)) {
-          hasContent = true;
-          break;
-        }
-      }
-      if (hasContent) {
-        maxX = x;
-        break;
-      }
-    }
-
-    // ตรวจสอบขอบบน
-    for (let y = minY; y <= maxY; y++) {
-      hasContent = false;
-      for (let x = minX; x <= maxX; x++) {
-        const color = getPixelColor(imageData, x, y);
-        if (colorsSimilar(color, targetColor, tolerance) && !isEdgeColor(color)) {
-          hasContent = true;
-          break;
-        }
-      }
-      if (hasContent) {
-        minY = y;
-        break;
-      }
-    }
-
-    // ตรวจสอบขอบล่าง
-    for (let y = maxY; y >= minY; y--) {
-      hasContent = false;
-      for (let x = minX; x <= maxX; x++) {
-        const color = getPixelColor(imageData, x, y);
-        if (colorsSimilar(color, targetColor, tolerance) && !isEdgeColor(color)) {
-          hasContent = true;
-          break;
-        }
-      }
-      if (hasContent) {
-        maxY = y;
-        break;
-      }
-    }
-
-    return { minX, maxX, minY, maxY };
-  };
-
-  // ฟังก์ชัน flood fill จากจุดเฉพาะ (เชื่อมต่อกันเท่านั้น)
-  const floodFillFromPoint = (imageData, startX, startY, targetColor, tolerance = 25) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const visited = new Set();
-    const stack = [{ x: startX, y: startY }];
-
-    let minX = startX,
-      maxX = startX;
-    let minY = startY,
-      maxY = startY;
-    let pixelCount = 0;
-
-    console.log(`🎯 เริ่ม flood fill จาก (${startX}, ${startY}) ด้วย tolerance ${tolerance}`);
-    console.log(`🎨 สีเป้าหมาย: RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b})`);
-
-    // ตัวอย่างสีที่จะ accept/reject เพื่อ debug
-    const sampleColors = [];
-
-    while (stack.length > 0 && pixelCount < 50000) {
-      // จำกัดขนาดสูงสุดเพื่อป้องกัน zone ใหญ่เกินไป
-      const { x, y } = stack.pop();
-      const key = `${x},${y}`;
-
-      if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
-        continue;
-      }
-
-      const currentColor = getPixelColor(imageData, x, y);
-
-      // เก็บตัวอย่างสีเพื่อ debug (เฉพาะ 10 ตัวแรก)
-      if (sampleColors.length < 10) {
-        const isSimilar = colorsSimilar(currentColor, targetColor, tolerance);
-        const isEdge = isEdgeColor(currentColor);
-        sampleColors.push({
-          pos: `(${x},${y})`,
-          color: `RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b})`,
-          similar: isSimilar,
-          edge: isEdge,
-          accepted: isSimilar && !isEdge
-        });
-      }
-
-      // ตรวจสอบความใกล้เคียงของสี (ยืดหยุ่นขึ้น)
-      if (!colorsSimilar(currentColor, targetColor, tolerance)) {
-        continue;
-      }
-
-      // ตรวจสอบว่าเป็นขอบเขตหรือไม่ (ยืดหยุ่นมากขึ้นสำหรับพื้นที่เล็ก)
-      if (isEdgeColor(currentColor)) {
-        // อนุญาตสีที่ไม่เข้มมากผ่านได้ (เพิ่มความยืดหยุ่น)
-        const avgColor = (currentColor.r + currentColor.g + currentColor.b) / 3;
-        if (avgColor < 80) {
-          // ลดเกณฑ์สีเข้มลงเพื่อให้พื้นที่เล็กผ่านได้ง่ายขึ้น
-          continue;
-        }
-      }
-
-      visited.add(key);
-      pixelCount++;
-
-      // อัพเดทขอบเขต
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-
-      // เพิ่มจุดข้างเคียง (4-connected สำหรับความแม่นยำ)
-      const neighbors = [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }];
-
-      for (const neighbor of neighbors) {
-        if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
-          stack.push(neighbor);
-        }
-      }
-    }
-
-    if (pixelCount >= 50000) {
-      console.log("⚠️ หยุด flood fill เนื่องจากขนาดใหญ่เกินไป");
-    }
-
-    // แสดง debug information
-    console.log("🔍 ตัวอย่างการวิเคราะห์สี:");
-    sampleColors.forEach(sample => {
-      const status = sample.accepted ? "✅" : sample.similar ? "🚫(ขอบ)" : "❌(ต่างสี)";
-      console.log(`  ${status} ${sample.pos} ${sample.color}`);
-    });
-
-    console.log(`📈 Flood fill เสร็จ: ${pixelCount} pixels, ขอบเขต: ${maxX - minX + 1}x${maxY - minY + 1}`);
-
-    return {
-      minX,
-      maxX,
-      minY,
-      maxY,
-      pixelCount,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1
-    };
-  };
-
-  // ฟังก์ชัน flood fill จากจุดเฉพาะ (ปรับปรุงให้ยืดหยุ่นกับสิ่งกีดขวาง)
-  const floodFillFromPointAdvanced = (imageData, startX, startY, targetColor, tolerance = 15) => {
-    const width = imageData.width;
-    const height = imageData.height;
-    const visited = new Set();
-    const stack = [{ x: startX, y: startY }];
-    const pixels = [];
-
-    let minX = startX,
-      maxX = startX;
-    let minY = startY,
-      maxY = startY;
-    let pixelCount = 0;
-
-    console.log(`🎯 เริ่ม advanced flood fill จาก (${startX}, ${startY}) ด้วย tolerance ${tolerance}`);
-
-    while (stack.length > 0 && pixelCount < 30000) {
-      // จำกัดขนาดให้เหมาะสม
-      const { x, y } = stack.pop();
-      const key = `${x},${y}`;
-
-      if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
-        continue;
-      }
-
-      const currentColor = getPixelColor(imageData, x, y);
-
-      // ตรวจสอบความใกล้เคียงของสี (ยืดหยุ่นขึ้นเล็กน้อย)
-      if (!colorsSimilar(currentColor, targetColor, tolerance + 2)) {
-        continue;
-      }
-
-      // ข้ามสีขอบแต่ยังคงสแกนต่อ (ยืดหยุ่นกับสิ่งกีดขวาง)
-      if (isEdgeColor(currentColor)) {
-        // ลองสแกนจุดข้างเคียงต่อ แต่ไม่นับ pixel นี้
-        const neighbors = [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }];
-
-        for (const neighbor of neighbors) {
-          if (
-            !visited.has(`${neighbor.x},${neighbor.y}`) &&
-            neighbor.x >= 0 &&
-            neighbor.x < width &&
-            neighbor.y >= 0 &&
-            neighbor.y < height
-          ) {
-            const neighborColor = getPixelColor(imageData, neighbor.x, neighbor.y);
-            if (colorsSimilar(neighborColor, targetColor, tolerance) && !isEdgeColor(neighborColor)) {
-              stack.push(neighbor);
-            }
-          }
-        }
-        visited.add(key);
-        continue;
-      }
-
-      visited.add(key);
-      pixelCount++;
-      pixels.push({ x, y });
-
-      // อัพเดทขอบเขต
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-
-      // เพิ่มจุดข้างเคียง (ลองทั้ง 4 และ 8 directions สำหรับการเชื่อมต่อที่ดีขึ้น)
-      const neighbors = [
-        { x: x + 1, y },
-        { x: x - 1, y },
-        { x, y: y + 1 },
-        { x, y: y - 1 },
-        // เพิ่มมุมเฉียงสำหรับการตรวจจับที่ดีขึ้น
-        { x: x + 1, y: y + 1 },
-        { x: x - 1, y: y - 1 },
-        { x: x + 1, y: y - 1 },
-        { x: x - 1, y: y + 1 }
-      ];
-
-      for (const neighbor of neighbors) {
-        if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
-          stack.push(neighbor);
-        }
-      }
-    }
-
-    if (pixelCount >= 30000) {
-      console.log("⚠️ หยุด flood fill เนื่องจากขนาดใหญ่เกินไป");
-    }
-
-    console.log(`📈 Advanced flood fill เสร็จ: ${pixelCount} pixels, ขอบเขต: ${maxX - minX + 1}x${maxY - minY + 1}`);
-
-    return {
-      minX,
-      maxX,
-      minY,
-      maxY,
-      pixelCount,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
-      pixels
-    };
-  };
-
-  // ฟังก์ชันหา rotated bounding box ที่ดีที่สุด (แบบง่าย)
-  const findBestRotatedBox = (pixels, imageData, targetColor) => {
-    if (!pixels || pixels.length < 10) return null;
-
-    console.log(`🔄 วิเคราะห์ rotated box จาก ${pixels.length} pixels`);
-
-    // ทดลองมุมหลักๆ
-    const angles = [0, 15, 30, 45, 60, 75, 90];
-    let bestScore = 0;
-    let bestBox = null;
-
-    for (const angle of angles) {
-      const box = calculateSimpleRotatedBox(pixels, angle);
-      if (box) {
-        // คำนวณคะแนนจากการใช้พื้นที่
-        const utilization = pixels.length / box.area;
-        const aspectScore = Math.min(box.aspectRatio, 1 / box.aspectRatio);
-        const score = utilization * aspectScore;
-
-        if (score > bestScore && utilization > 0.3) {
-          bestScore = score;
-          bestBox = { ...box, score };
-        }
-      }
-    }
-
-    return bestBox;
-  };
-
-  // ฟังก์ชันคำนวณ rotated box แบบง่าย
-  const calculateSimpleRotatedBox = (pixels, angleDegrees) => {
-    const angleRad = (angleDegrees * Math.PI) / 180;
-    const cos = Math.cos(angleRad);
-    const sin = Math.sin(angleRad);
-
-    // หาจุดศูนย์กลาง
-    const centerX = pixels.reduce((sum, p) => sum + p.x, 0) / pixels.length;
-    const centerY = pixels.reduce((sum, p) => sum + p.y, 0) / pixels.length;
-
-    // หมุนจุดและหาขอบเขต
-    let minX = Infinity,
-      maxX = -Infinity;
-    let minY = Infinity,
-      maxY = -Infinity;
-
-    for (const pixel of pixels) {
-      const dx = pixel.x - centerX;
-      const dy = pixel.y - centerY;
-
-      const rotX = centerX + dx * cos - dy * sin;
-      const rotY = centerY + dx * sin + dy * cos;
-
-      minX = Math.min(minX, rotX);
-      maxX = Math.max(maxX, rotX);
-      minY = Math.min(minY, rotY);
-      maxY = Math.max(maxY, rotY);
-    }
-
-    const width = maxX - minX;
-    const height = maxY - minY;
-
-    return {
-      angle: angleDegrees,
-      width,
-      height,
-      area: width * height,
-      aspectRatio: width / height,
-      corners: [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }]
-    };
-  };
-
-  // ฟังก์ชันเชื่อม region ที่อยู่ใกล้กันและเป็นสีเดียวกัน
-  const connectNearbyRegions = (regions, maxDistance = 15) => {
-    if (regions.length <= 1) return regions;
-
-    const connected = [];
-    const processed = new Set();
-
-    for (let i = 0; i < regions.length; i++) {
-      if (processed.has(i)) continue;
-
-      const group = [regions[i]];
-      processed.add(i);
-
-      // หา regions ที่อยู่ใกล้กัน
-      for (let j = i + 1; j < regions.length; j++) {
-        if (processed.has(j)) continue;
-
-        const distance = Math.min(
-          Math.abs(regions[i].centerX - regions[j].centerX),
-          Math.abs(regions[i].centerY - regions[j].centerY)
-        );
-
-        if (distance <= maxDistance) {
-          group.push(regions[j]);
-          processed.add(j);
-        }
-      }
-
-      // รวม bounds ของ group
-      if (group.length > 1) {
-        const combinedBounds = {
-          minX: Math.min(...group.map(r => r.minX)),
-          maxX: Math.max(...group.map(r => r.maxX)),
-          minY: Math.min(...group.map(r => r.minY)),
-          maxY: Math.max(...group.map(r => r.maxY)),
-          pixelCount: group.reduce((sum, r) => sum + r.pixelCount, 0)
-        };
-        combinedBounds.width = combinedBounds.maxX - combinedBounds.minX + 1;
-        combinedBounds.height = combinedBounds.maxY - combinedBounds.minY + 1;
-        connected.push(combinedBounds);
-
-        console.log(`🔗 เชื่อม ${group.length} พื้นที่เข้าด้วยกัน -> ${combinedBounds.width}x${combinedBounds.height}`);
-      } else {
-        connected.push(group[0]);
-      }
-    }
-
-    return connected;
-  };
-
-  // จัดการการคลิกที่ภาพ (สร้าง marker หรือ zone อัตโนมัติ)
-  const handleImageClick = async e => {
-    console.log("🖱️ Image click detected!", { ctrlKey: e.ctrlKey, metaKey: e.metaKey });
-
+  // จัดการการคลิกที่ภาพ (สร้าง marker)
+  const handleImageClick = e => {
     if (
       isDragging ||
       hasDragged ||
@@ -1255,15 +218,10 @@ export default function VillageMap() {
       selectedZones.length > 0 ||
       justFinishedGroupSelection
     ) {
-      console.log("🚫 Click blocked due to ongoing operation");
       setHasDragged(false);
       setJustFinishedGroupSelection(false);
       return;
     }
-
-    // ล้างการเลือก object เดี่ยว
-    setClickedMarker(null);
-    setClickedZone(null);
 
     // แปลงตำแหน่งเมาส์เป็นตำแหน่งบนรูปภาพที่ zoom แล้ว
     const rect = imageRef.current.getBoundingClientRect();
@@ -1280,122 +238,6 @@ export default function VillageMap() {
     const imageHeight = rect.height / zoomLevel;
     if (x < 0 || x > imageWidth || y < 0 || y > imageHeight) {
       return;
-    }
-
-    // ถ้ากด Ctrl+Click ให้ลองตรวจจับขอบเขตพื้นที่อัตโนมัติ
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault(); // ป้องกัน default behavior
-      console.log("🔍 Ctrl+Click detected - starting auto zone detection...");
-      console.log(`📍 Position: (${x.toFixed(1)}, ${y.toFixed(1)})`);
-      try {
-        const bounds = await detectAreaBounds(x, y);
-        console.log("🎯 Detection result:", bounds);
-
-        // ไม่มีขีดจำกัดขนาดขั้นต่ำ - สร้าง zone ได้ทุกขนาด
-        const isValidSize = bounds && bounds.width > 0 && bounds.height > 0;
-
-        console.log(
-          `📏 ตรวจสอบขนาด: ${bounds?.width}x${bounds?.height} (${bounds?.pixelCount} pixels) - ${
-            isValidSize ? "ผ่าน" : "ไม่ผ่าน"
-          }`
-        );
-
-        if (isValidSize) {
-          // สร้าง zone อัตโนมัติ
-          setCurrentSelection({
-            startX: bounds.x,
-            startY: bounds.y,
-            endX: bounds.x + bounds.width,
-            endY: bounds.y + bounds.height
-          });
-
-          // สร้างชื่อ Zone สำหรับการตรวจจับแบบครบถ้วน
-          const generateZoneName = (areaType, bounds) => {
-            const zoneNumber = zones.length + 1;
-            const aspectRatio = bounds.width / bounds.height;
-            const area = bounds.width * bounds.height;
-
-            if (areaType === "complete" || areaType === "connected") {
-              // ตั้งชื่อตามลักษณะของพื้นที่เชื่อมต่อกัน (รองรับพื้นที่เล็กมาก)
-              if (aspectRatio > 3) {
-                return `แถบแนวนอน ${zoneNumber}`;
-              } else if (aspectRatio < 0.33) {
-                return `แถบแนวตั้ง ${zoneNumber}`;
-              } else if (area > 8000) {
-                return `บล็อกใหญ่ ${zoneNumber}`;
-              } else if (area > 2000) {
-                return `บล็อกกลาง ${zoneNumber}`;
-              } else if (area > 200) {
-                return `บล็อกเล็ก ${zoneNumber}`;
-              } else {
-                return `ช่องเล็ก ${zoneNumber}`; // สำหรับพื้นที่เล็กมากๆ
-              }
-            }
-
-            // สำหรับ areaType อื่นๆ (fallback)
-            if (aspectRatio > 3) {
-              return `พื้นที่แนวนอน ${zoneNumber}`;
-            } else if (aspectRatio < 0.33) {
-              return `พื้นที่แนวตั้ง ${zoneNumber}`;
-            } else {
-              return `พื้นที่ ${zoneNumber}`;
-            }
-
-            // Fallback สำหรับ areaType อื่นๆ
-            switch (areaType) {
-              case "corridor":
-                if (aspectRatio > 2) {
-                  return `ทางเดินแนวนอน ${zoneNumber}`;
-                } else if (aspectRatio < 0.5) {
-                  return `ทางเดินแนวตั้ง ${zoneNumber}`;
-                } else {
-                  return `ทางเดิน ${zoneNumber}`;
-                }
-              case "room":
-                if (bounds.width > 80 && bounds.height > 80) {
-                  return `บล็อก ${zoneNumber}`;
-                } else {
-                  return `ห้อง ${zoneNumber}`;
-                }
-              default:
-                return `พื้นที่สีเดียวกัน ${zoneNumber}`;
-            }
-          };
-
-          // ใช้ข้อมูลประเภทพื้นที่จาก bounds
-          const detectedAreaType = bounds.areaType || "complete";
-          const zoneName = generateZoneName(detectedAreaType, bounds);
-          const pixelInfo = bounds.pixelCount ? ` (${bounds.pixelCount.toLocaleString()} pixels)` : "";
-
-          console.log(`🏗️ สร้าง Zone: ${zoneName}${pixelInfo} - ประเภท: ${detectedAreaType}`);
-
-          // เลือกสีตามลักษณะของพื้นที่ (รองรับพื้นที่เล็กมาก)
-          let zoneColor = "blue"; // สีเริ่มต้น
-          const aspectRatio = bounds.width / bounds.height;
-          const area = bounds.width * bounds.height;
-
-          if (aspectRatio > 3 || aspectRatio < 0.33) {
-            zoneColor = "cyan"; // สำหรับแถบยาว
-          } else if (area > 5000) {
-            zoneColor = "emerald"; // สำหรับพื้นที่ใหญ่
-          } else if (area < 200) {
-            zoneColor = "yellow"; // สำหรับช่องเล็กมากๆ
-          } else {
-            zoneColor = "blue"; // สำหรับพื้นที่ปกติ
-          }
-
-          setZoneFormData({
-            name: zoneName,
-            color: zoneColor
-          });
-          setShowZoneModal(true);
-          return;
-        } else {
-          console.log("❌ Detection failed or area too small");
-        }
-      } catch (error) {
-        console.log("❌ Auto-detection failed:", error);
-      }
     }
 
     // ตรวจสอบว่าจุดที่คลิกอยู่ในกลุ่มใดหรือไม่
@@ -1432,44 +274,34 @@ export default function VillageMap() {
 
       switch (action.type) {
         case ACTION_TYPES.ADD_MARKER:
-          setMarkers(prevMarkers => prevMarkers.filter(m => m.id !== action.data.id));
+          setMarkers(markers.filter(m => m.id !== action.data.id));
           break;
         case ACTION_TYPES.REMOVE_MARKER:
-          setMarkers(prevMarkers => [...prevMarkers, action.data]);
+          setMarkers([...markers, action.data]);
           break;
         case ACTION_TYPES.MOVE_MARKER:
-          setMarkers(prevMarkers =>
-            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.previousX, y: action.data.previousY } : m))
+          setMarkers(
+            markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.previousX, y: action.data.previousY } : m))
           );
           break;
         case ACTION_TYPES.RESET_MARKER:
-          setMarkers(prevMarkers =>
-            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m))
-          );
+          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m)));
           break;
         case ACTION_TYPES.ADD_ZONE:
-          setZones(prevZones => prevZones.filter(z => z.id !== action.data.id));
-          // ลบ zone ออกจาก visibleZones ด้วย
-          setVisibleZones(prevVisible => {
-            const newVisible = { ...prevVisible };
-            delete newVisible[action.data.id];
-            return newVisible;
-          });
+          setZones(zones.filter(z => z.id !== action.data.id));
           break;
         case ACTION_TYPES.REMOVE_ZONE:
-          setZones(prevZones => [...prevZones, action.data]);
-          // เพิ่ม zone กลับเข้า visibleZones ด้วย
-          setVisibleZones(prevVisible => ({ ...prevVisible, [action.data.id]: true }));
+          setZones([...zones, action.data]);
           break;
         case ACTION_TYPES.EDIT_ZONE:
-          setZones(prevZones => prevZones.map(z => (z.id === action.data.id ? { ...z, ...action.data.previous } : z)));
+          setZones(zones.map(z => (z.id === action.data.id ? { ...z, ...action.data.previous } : z)));
           break;
         case ACTION_TYPES.EDIT_MARKER:
-          setMarkers(prevMarkers => prevMarkers.map(m => (m.id === action.data.id ? { ...m, ...action.data.previous } : m)));
+          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, ...action.data.previous } : m)));
           break;
         case ACTION_TYPES.MOVE_GROUP:
-          setMarkers(prevMarkers =>
-            prevMarkers.map(marker => {
+          setMarkers(
+            markers.map(marker => {
               const originalMarker = action.data.markers.find(m => m.id === marker.id);
               if (originalMarker) {
                 return {
@@ -1483,8 +315,8 @@ export default function VillageMap() {
           );
           break;
         case ACTION_TYPES.MOVE_ZONE_GROUP:
-          setZones(prevZones =>
-            prevZones.map(zone => {
+          setZones(
+            zones.map(zone => {
               const originalZone = action.data.zones.find(z => z.id === zone.id);
               if (originalZone) {
                 return {
@@ -1500,8 +332,8 @@ export default function VillageMap() {
         case ACTION_TYPES.MOVE_MIXED_GROUP:
           // undo สำหรับ markers
           if (action.data.markers) {
-            setMarkers(prevMarkers =>
-              prevMarkers.map(marker => {
+            setMarkers(
+              markers.map(marker => {
                 const originalMarker = action.data.markers.find(m => m.id === marker.id);
                 if (originalMarker) {
                   return {
@@ -1516,8 +348,8 @@ export default function VillageMap() {
           }
           // undo สำหรับ zones
           if (action.data.zones) {
-            setZones(prevZones =>
-              prevZones.map(zone => {
+            setZones(
+              zones.map(zone => {
                 const originalZone = action.data.zones.find(z => z.id === zone.id);
                 if (originalZone) {
                   return {
@@ -1545,44 +377,34 @@ export default function VillageMap() {
 
       switch (action.type) {
         case ACTION_TYPES.ADD_MARKER:
-          setMarkers(prevMarkers => [...prevMarkers, action.data]);
+          setMarkers([...markers, action.data]);
           break;
         case ACTION_TYPES.REMOVE_MARKER:
-          setMarkers(prevMarkers => prevMarkers.filter(m => m.id !== action.data.id));
+          setMarkers(markers.filter(m => m.id !== action.data.id));
           break;
         case ACTION_TYPES.MOVE_MARKER:
-          setMarkers(prevMarkers =>
-            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m))
-          );
+          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m)));
           break;
         case ACTION_TYPES.RESET_MARKER:
-          setMarkers(prevMarkers =>
-            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.originalX, y: action.data.originalY } : m))
+          setMarkers(
+            markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.originalX, y: action.data.originalY } : m))
           );
           break;
         case ACTION_TYPES.ADD_ZONE:
-          setZones(prevZones => [...prevZones, action.data]);
-          // เพิ่ม zone กลับเข้า visibleZones ด้วย
-          setVisibleZones(prevVisible => ({ ...prevVisible, [action.data.id]: true }));
+          setZones([...zones, action.data]);
           break;
         case ACTION_TYPES.REMOVE_ZONE:
-          setZones(prevZones => prevZones.filter(z => z.id !== action.data.id));
-          // ลบ zone ออกจาก visibleZones ด้วย
-          setVisibleZones(prevVisible => {
-            const newVisible = { ...prevVisible };
-            delete newVisible[action.data.id];
-            return newVisible;
-          });
+          setZones(zones.filter(z => z.id !== action.data.id));
           break;
         case ACTION_TYPES.EDIT_ZONE:
-          setZones(prevZones => prevZones.map(z => (z.id === action.data.id ? { ...z, ...action.data.current } : z)));
+          setZones(zones.map(z => (z.id === action.data.id ? { ...z, ...action.data.current } : z)));
           break;
         case ACTION_TYPES.EDIT_MARKER:
-          setMarkers(prevMarkers => prevMarkers.map(m => (m.id === action.data.id ? { ...m, ...action.data.current } : m)));
+          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, ...action.data.current } : m)));
           break;
         case ACTION_TYPES.MOVE_GROUP:
-          setMarkers(prevMarkers =>
-            prevMarkers.map(marker => {
+          setMarkers(
+            markers.map(marker => {
               const movedMarker = action.data.markers.find(m => m.id === marker.id);
               if (movedMarker) {
                 return {
@@ -1596,8 +418,8 @@ export default function VillageMap() {
           );
           break;
         case ACTION_TYPES.MOVE_ZONE_GROUP:
-          setZones(prevZones =>
-            prevZones.map(zone => {
+          setZones(
+            zones.map(zone => {
               const movedZone = action.data.zones.find(z => z.id === zone.id);
               if (movedZone) {
                 return {
@@ -1613,8 +435,8 @@ export default function VillageMap() {
         case ACTION_TYPES.MOVE_MIXED_GROUP:
           // redo สำหรับ markers
           if (action.data.markers) {
-            setMarkers(prevMarkers =>
-              prevMarkers.map(marker => {
+            setMarkers(
+              markers.map(marker => {
                 const movedMarker = action.data.markers.find(m => m.id === marker.id);
                 if (movedMarker) {
                   return {
@@ -1629,8 +451,8 @@ export default function VillageMap() {
           }
           // redo สำหรับ zones
           if (action.data.zones) {
-            setZones(prevZones =>
-              prevZones.map(zone => {
+            setZones(
+              zones.map(zone => {
                 const movedZone = action.data.zones.find(z => z.id === zone.id);
                 if (movedZone) {
                   return {
@@ -1686,31 +508,6 @@ export default function VillageMap() {
           e.preventDefault();
           resetZoomAndPan();
         }
-        // เพิ่ม shortcut สำหรับ copy zones/markers
-        if ((e.ctrlKey || e.metaKey) && e.key === "c" && (selectedZones.length > 0 || selectedMarkers.length > 0)) {
-          e.preventDefault();
-          if (selectedZones.length > 0) {
-            copySelectedZones();
-          }
-          if (selectedMarkers.length > 0) {
-            copySelectedMarkers();
-          }
-        }
-        // เพิ่ม shortcut สำหรับ paste zones/markers
-        if ((e.ctrlKey || e.metaKey) && e.key === "v" && (copiedZones.length > 0 || copiedMarkers.length > 0)) {
-          e.preventDefault();
-          if (copiedZones.length > 0) {
-            pasteZones();
-          }
-          if (copiedMarkers.length > 0) {
-            pasteMarkers();
-          }
-        }
-        // เพิ่ม shortcut สำหรับลบ objects ที่เลือก
-        if (e.key === "Delete" && (selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone)) {
-          e.preventDefault();
-          deleteSelectedObjects();
-        }
         // ติดตาม ctrl key
         if (e.ctrlKey || e.metaKey) {
           setIsCtrlPressed(true);
@@ -1730,7 +527,7 @@ export default function VillageMap() {
         window.removeEventListener("keyup", handleKeyUp);
       };
     },
-    [currentIndex, history, selectedZones, selectedMarkers, copiedZones, copiedMarkers, clickedMarker, clickedZone]
+    [currentIndex, history]
   );
 
   // อัพเดทฟังก์ชันที่เกี่ยวข้องกับการเปลี่ยนแปลง state
@@ -1787,13 +584,8 @@ export default function VillageMap() {
       addToHistory(ACTION_TYPES.ADD_ZONE, newZone);
       setShowZoneModal(false);
       setZoneFormData({ name: "", color: "blue" });
-      // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
+      setSelectedZoneShape("rectangle");
       setVisibleZones({ ...visibleZones, [newZone.id]: true });
-
-      // อัพเดทกลุ่มของ markers หลังจากสร้าง zone ใหม่
-      setTimeout(() => {
-        updateMarkersGroup();
-      }, 50);
     }
   };
 
@@ -1823,7 +615,7 @@ export default function VillageMap() {
   const closeZoneModal = () => {
     setShowZoneModal(false);
     setZoneFormData({ name: "", color: "blue" });
-    // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
+    setSelectedZoneShape("rectangle");
   };
 
   // reset marker กลับตำแหน่งเดิม
@@ -1920,13 +712,9 @@ export default function VillageMap() {
     // ตรวจสอบว่า marker นี้อยู่ในกลุ่มที่เลือกหรือไม่
     if (selectedMarkers.includes(marker.id) && selectedMarkers.length > 0) {
       // ถ้าอยู่ในกลุ่มที่เลือก ให้ใช้การลากกลุ่มแทน
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - containerRect.left;
-      const mouseY = e.clientY - containerRect.top;
-
-      // แปลงเป็นตำแหน่งจริงบนรูปภาพ
-      const x = (mouseX - panOffset.x) / zoomLevel;
-      const y = (mouseY - panOffset.y) / zoomLevel;
+      const rect = imageRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
 
       // ถ้ามีทั้ง markers และ zones ที่เลือกไว้ ให้ใช้การลากแบบผสม
       if (selectedZones.length > 0) {
@@ -1994,21 +782,8 @@ export default function VillageMap() {
     if (!draggedMarker || !isDragging) return;
 
     const rect = imageRef.current.getBoundingClientRect();
-    const containerRect = containerRef.current.getBoundingClientRect();
-
-    // คำนวณตำแหน่งเมาส์ที่ถูกต้องโดยคำนึงถึง zoom และ pan
-    const mouseX = e.clientX - containerRect.left;
-    const mouseY = e.clientY - containerRect.top;
-
-    // แปลงเป็นตำแหน่งจริงบนรูปภาพ
-    const x = (mouseX - panOffset.x) / zoomLevel;
-    const y = (mouseY - panOffset.y) / zoomLevel;
-
-    // จำกัดขอบเขตให้อยู่ในรูปภาพ
-    const imageWidth = rect.width / zoomLevel;
-    const imageHeight = rect.height / zoomLevel;
-    const clampedX = Math.max(0, Math.min(x, imageWidth));
-    const clampedY = Math.max(0, Math.min(y, imageHeight));
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
 
     setMarkers(
       markers.map(marker => {
@@ -2016,7 +791,7 @@ export default function VillageMap() {
           const previousX = marker.x;
           const previousY = marker.y;
 
-          const updatedMarker = { ...marker, x: clampedX, y: clampedY };
+          const updatedMarker = { ...marker, x, y };
           const zone = findMarkerZone(updatedMarker);
           if (zone) {
             updatedMarker.group = zone.name;
@@ -2026,8 +801,8 @@ export default function VillageMap() {
             id: marker.id,
             previousX,
             previousY,
-            x: clampedX,
-            y: clampedY
+            x,
+            y
           });
 
           return updatedMarker;
@@ -2041,8 +816,8 @@ export default function VillageMap() {
   const handleImageMouseDown = e => {
     if (isDragging || isPanning) return;
 
-    // ตรวจสอบว่ากด middle click หรือ Alt+click สำหรับ panning
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    // ตรวจสอบว่ากด middle click หรือ Space+click สำหรับ panning
+    if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
       e.preventDefault();
       setIsPanning(true);
       setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
@@ -2285,15 +1060,9 @@ export default function VillageMap() {
       return;
     }
 
-    // แปลงตำแหน่งเมาส์เป็นตำแหน่งบนรูปภาพที่ zoom แล้ว
     const rect = imageRef.current.getBoundingClientRect();
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const rawMouseX = e.clientX - containerRect.left;
-    const rawMouseY = e.clientY - containerRect.top;
-
-    // คำนวณตำแหน่งจริงบนรูปภาพ
-    const mouseX = (rawMouseX - panOffset.x) / zoomLevel;
-    const mouseY = (rawMouseY - panOffset.y) / zoomLevel;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
     // ตรวจสอบว่า zone นี้อยู่ในกลุ่มที่เลือกหรือไม่ และไม่มี handle
     if (selectedZones.includes(zone.id) && selectedZones.length > 0 && !handle) {
@@ -2419,15 +1188,9 @@ export default function VillageMap() {
     }
 
     if (isDraggingZone && draggedZone && originalZoneState) {
-      // แปลงตำแหน่งเมาส์เป็นตำแหน่งบนรูปภาพที่ zoom แล้ว
       const rect = imageRef.current.getBoundingClientRect();
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const rawMouseX = e.clientX - containerRect.left;
-      const rawMouseY = e.clientY - containerRect.top;
-
-      // คำนวณตำแหน่งจริงบนรูปภาพ
-      const mouseX = Math.max(0, Math.min((rawMouseX - panOffset.x) / zoomLevel, rect.width / zoomLevel));
-      const mouseY = Math.max(0, Math.min((rawMouseY - panOffset.y) / zoomLevel, rect.height / zoomLevel));
+      const mouseX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+      const mouseY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
 
       setZones(prevZones =>
         prevZones.map(zone =>
@@ -2448,7 +1211,7 @@ export default function VillageMap() {
         prevZones.map(zone => {
           if (zone.id === draggedZone.id) {
             let newZone = { ...zone };
-            const minSize = 1; // เปลี่ยนจาก 50 เป็น 1 เพื่อให้ resize เล็กได้ตามต้องการ
+            const minSize = 50;
 
             // คำนวณขอบเขตสูงสุดและต่ำสุด
             const originalLeft = originalZoneState.initialX;
@@ -2539,7 +1302,7 @@ export default function VillageMap() {
               }
             }
 
-            // ตรวจสอบขนาดขั้นต่ำ - อนุญาตให้เล็กได้ตามต้องการ
+            // ตรวจสอบขนาดขั้นต่ำ
             if (newZone.width < minSize || newZone.height < minSize) {
               return zone;
             }
@@ -2612,15 +1375,11 @@ export default function VillageMap() {
         const offsetX = newX - referenceMarker.x;
         const offsetY = newY - referenceMarker.y;
 
-        // คำนวณขอบเขตที่ถูกต้องตาม zoom
-        const imageWidth = rect.width / zoomLevel;
-        const imageHeight = rect.height / zoomLevel;
-
         setMarkers(prevMarkers =>
           prevMarkers.map(marker => {
             if (selectedMarkers.includes(marker.id)) {
-              const newMarkerX = Math.max(0, Math.min(marker.x + offsetX, imageWidth));
-              const newMarkerY = Math.max(0, Math.min(marker.y + offsetY, imageHeight));
+              const newMarkerX = Math.max(0, Math.min(marker.x + offsetX, rect.width));
+              const newMarkerY = Math.max(0, Math.min(marker.y + offsetY, rect.height));
               return { ...marker, x: newMarkerX, y: newMarkerY };
             }
             return marker;
@@ -2642,17 +1401,13 @@ export default function VillageMap() {
 
       // อัพเดท markers
       if (selectedMarkers.length > 0) {
-        // คำนวณขอบเขตที่ถูกต้องตาม zoom
-        const imageWidth = rect.width / zoomLevel;
-        const imageHeight = rect.height / zoomLevel;
-
         setMarkers(prevMarkers =>
           prevMarkers.map(marker => {
             if (selectedMarkers.includes(marker.id)) {
               const originalX = marker.originalX || marker.x;
               const originalY = marker.originalY || marker.y;
-              const newMarkerX = Math.max(0, Math.min(originalX + offsetX, imageWidth));
-              const newMarkerY = Math.max(0, Math.min(originalY + offsetY, imageHeight));
+              const newMarkerX = Math.max(0, Math.min(originalX + offsetX, rect.width));
+              const newMarkerY = Math.max(0, Math.min(originalY + offsetY, rect.height));
               return { ...marker, x: newMarkerX, y: newMarkerY };
             }
             return marker;
@@ -2662,17 +1417,13 @@ export default function VillageMap() {
 
       // อัพเดท zones
       if (selectedZones.length > 0) {
-        // คำนวณขอบเขตที่ถูกต้องตาม zoom
-        const imageWidth = rect.width / zoomLevel;
-        const imageHeight = rect.height / zoomLevel;
-
         setZones(prevZones =>
           prevZones.map(zone => {
             if (selectedZones.includes(zone.id)) {
               const originalX = zone.originalX || zone.x;
               const originalY = zone.originalY || zone.y;
-              const newZoneX = Math.max(0, Math.min(originalX + offsetX, imageWidth - zone.width));
-              const newZoneY = Math.max(0, Math.min(originalY + offsetY, imageHeight - zone.height));
+              const newZoneX = Math.max(0, Math.min(originalX + offsetX, rect.width - zone.width));
+              const newZoneY = Math.max(0, Math.min(originalY + offsetY, rect.height - zone.height));
               return { ...zone, x: newZoneX, y: newZoneY };
             }
             return zone;
@@ -2695,15 +1446,11 @@ export default function VillageMap() {
         const offsetX = newX - referenceZone.x;
         const offsetY = newY - referenceZone.y;
 
-        // คำนวณขอบเขตที่ถูกต้องตาม zoom
-        const imageWidth = rect.width / zoomLevel;
-        const imageHeight = rect.height / zoomLevel;
-
         setZones(prevZones =>
           prevZones.map(zone => {
             if (selectedZones.includes(zone.id)) {
-              const newZoneX = Math.max(0, Math.min(zone.x + offsetX, imageWidth - zone.width));
-              const newZoneY = Math.max(0, Math.min(zone.y + offsetY, imageHeight - zone.height));
+              const newZoneX = Math.max(0, Math.min(zone.x + offsetX, rect.width - zone.width));
+              const newZoneY = Math.max(0, Math.min(zone.y + offsetY, rect.height - zone.height));
               return { ...zone, x: newZoneX, y: newZoneY };
             }
             return zone;
@@ -2850,13 +1597,6 @@ export default function VillageMap() {
       // บันทึกประวัติถ้ามีการเปลี่ยนแปลง
       if (hasPositionChanged) {
         addToHistory(ACTION_TYPES.MOVE_MIXED_GROUP, historyData);
-
-        // อัพเดทกลุ่มของ markers หลังจากย้าย objects แบบผสม
-        if (historyData.zones) {
-          setTimeout(() => {
-            updateMarkersGroup();
-          }, 50);
-        }
       }
 
       setIsDraggingMixed(false);
@@ -2884,11 +1624,6 @@ export default function VillageMap() {
         addToHistory(ACTION_TYPES.MOVE_ZONE_GROUP, {
           zones: originalPositions
         });
-
-        // อัพเดทกลุ่มของ markers หลังจากย้าย zones
-        setTimeout(() => {
-          updateMarkersGroup();
-        }, 50);
       }
 
       setIsDraggingZoneGroup(false);
@@ -2928,11 +1663,6 @@ export default function VillageMap() {
       setResizeHandle(null);
       setOriginalZoneState(null);
       setRotationStartAngle(0);
-
-      // อัพเดทกลุ่มของ markers หลังจากการหมุนหรือปรับขนาด zone
-      setTimeout(() => {
-        updateMarkersGroup();
-      }, 50);
     }
 
     if (isDragging) {
@@ -3142,12 +1872,10 @@ export default function VillageMap() {
     const sizeInPixels = size * (isOnMap ? 4 : 3) * (isOnMap ? zoomLevel : 1);
     const markerColor = colorMap[displayMarker.color] || colorMap.red;
     const isSelected = selectedMarkers.includes(displayMarker.id);
-    const isClickedSingle = clickedMarker?.id === displayMarker.id;
 
     if (isOnMap) {
       return (
         <div
-          key={marker.id}
           className={`absolute transform -translate-x-1/2 -translate-y-1/2 group ${
             isSelected && selectedMarkers.length > 1 ? "cursor-move" : "cursor-pointer"
           }`}
@@ -3158,67 +1886,19 @@ export default function VillageMap() {
           }}
           onDoubleClick={e => handleMarkerDoubleClick(e, marker)}
           onMouseDown={e => handleMarkerMouseDown(e, marker)}
-          onClick={e => {
-            e.stopPropagation();
-            // ถ้าไม่ได้กำลังลาก ให้เลือก marker นี้
-            if (!isDragging && !hasDragged) {
-              setClickedMarker(marker);
-              setClickedZone(null);
-              // ล้างการเลือกแบบกลุ่ม
-              setSelectedMarkers([]);
-              setSelectedZones([]);
-            }
-          }}
         >
           <div className={`relative ${draggedMarker?.id === displayMarker.id ? "scale-110" : ""}`}>
             <div
-              className={`rounded-full transition-all duration-200 ${
-                isSelected ? "ring-4 ring-blue-400 ring-opacity-75" : ""
-              } ${isClickedSingle ? "ring-4 ring-red-400 ring-opacity-75" : ""}`}
+              className={`rounded-full transition-all duration-200 ${isSelected ? "ring-4 ring-blue-400 ring-opacity-75" : ""}`}
               style={{
                 width: `${sizeInPixels}px`,
                 height: `${sizeInPixels}px`,
-                backgroundColor: markerColor,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                position: "relative"
+                backgroundColor: markerColor
               }}
-            >
-              {/* ชื่อ marker ตรงกลาง */}
-              {displayMarker.name && (
-                <span
-                  className="absolute left-1/2 top-1/2 whitespace-nowrap pointer-events-none select-none"
-                  style={{
-                    transform: "translate(-50%, -50%)",
-                    color: "#fff",
-                    fontWeight: 600,
-                    textShadow: "0 1px 4px rgba(0,0,0,0.7)",
-                    fontSize: `${Math.max(10, Math.min(18, sizeInPixels / 3))}px`,
-                    maxWidth: `${sizeInPixels - 8}px`,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis"
-                  }}
-                  title={displayMarker.name}
-                >
-                  {displayMarker.name}
-                </span>
-              )}
-            </div>
+            />
             {isSelected && (
               <div
                 className="absolute inset-0 border-2 border-blue-500 border-dashed rounded-full animate-pulse"
-                style={{
-                  width: `${sizeInPixels + 8}px`,
-                  height: `${sizeInPixels + 8}px`,
-                  left: "-4px",
-                  top: "-4px"
-                }}
-              />
-            )}
-            {isClickedSingle && (
-              <div
-                className="absolute inset-0 border-2 border-red-500 border-solid rounded-full animate-pulse"
                 style={{
                   width: `${sizeInPixels + 8}px`,
                   height: `${sizeInPixels + 8}px`,
@@ -3260,34 +1940,13 @@ export default function VillageMap() {
     } else {
       return (
         <div
-          key={marker.id}
-          className={`rounded-full transition-all duration-200 flex items-center justify-center relative`}
+          className={`rounded-full transition-all duration-200`}
           style={{
             width: `${sizeInPixels}px`,
             height: `${sizeInPixels}px`,
             backgroundColor: markerColor
           }}
-        >
-          {/* ชื่อ marker ตรงกลาง (ใน list) */}
-          {displayMarker.name && (
-            <span
-              className="absolute left-1/2 top-1/2 whitespace-nowrap pointer-events-none select-none"
-              style={{
-                transform: "translate(-50%, -50%)",
-                color: "#fff",
-                fontWeight: 600,
-                textShadow: "0 1px 4px rgba(0,0,0,0.7)",
-                fontSize: `${Math.max(10, Math.min(18, sizeInPixels / 3))}px`,
-                maxWidth: `${sizeInPixels - 8}px`,
-                overflow: "hidden",
-                textOverflow: "ellipsis"
-              }}
-              title={displayMarker.name}
-            >
-              {displayMarker.name}
-            </span>
-          )}
-        </div>
+        />
       );
     }
   };
@@ -3299,17 +1958,12 @@ export default function VillageMap() {
 
   // อัพเดท JSX สำหรับแสดงกลุ่ม
   const renderZone = zone => {
-    const isVisible = visibleZones[zone.id];
-
-    if (!isVisible) {
-      return null;
-    }
+    if (!visibleZones[zone.id]) return null;
     // ถ้ากำลังแก้ไขกลุ่มนี้ ให้ใช้ข้อมูลจาก editZoneData แทน
     const displayZone = editZoneData?.id === zone.id ? editZoneData : zone;
     const zoneColors = getZoneColors(displayZone.color);
     const isBeingDragged = draggedZone?.id === zone.id;
     const isSelected = selectedZones.includes(zone.id);
-    const isClickedSingle = clickedZone?.id === zone.id;
 
     // กำหนดรูปทรง CSS ตาม shape
     const getShapeStyles = shape => {
@@ -3334,27 +1988,24 @@ export default function VillageMap() {
         amber: "#F59E0B"
       };
 
-      const currentBorderColor = isSelected
-        ? "#3B82F6"
-        : isClickedSingle
-        ? "#EF4444"
-        : borderColorMapping[displayZone.color] || borderColorMapping.blue;
+      const currentBorderColor = isSelected ? "#3B82F6" : borderColorMapping[displayZone.color] || borderColorMapping.blue;
 
       switch (shape) {
         case "circle":
           return {
             borderRadius: "50%",
-            border: `2px ${isSelected || isClickedSingle ? "solid" : "dashed"} ${currentBorderColor}`
+            border: `2px ${isSelected ? "solid" : "dashed"} ${currentBorderColor}`
           };
         case "triangle":
           return {
             clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)",
+            border: "none",
             backgroundColor: colorMapping[displayZone.color] || colorMapping["blue"]
           };
         default:
           // rectangle
           return {
-            border: `2px ${isSelected || isClickedSingle ? "solid" : "dashed"} ${currentBorderColor}`
+            border: `2px ${isSelected ? "solid" : "dashed"} ${currentBorderColor}`
           };
       }
     };
@@ -3371,227 +2022,54 @@ export default function VillageMap() {
       { position: "se", cursor: "se-resize", style: { bottom: -5, right: -5 } }
     ];
 
-    // คำนวณตำแหน่งปุ่มหมุนที่ไม่ได้รับผลกระทบจากการหมุน zone
-    const rotateButtonDistance =
-      displayZone.shape === "triangle"
-        ? zoomLevel >= 2
-          ? Math.max(36, 48 / zoomLevel)
-          : Math.max(48, Math.min(64, 54 * zoomLevel))
-        : zoomLevel >= 2
-        ? Math.max(24, 32 / zoomLevel)
-        : Math.max(32, Math.min(48, 36 * zoomLevel));
-
-    const rotateButtonSize = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
-    const finalRotateButtonSize = Math.max(24, Math.min(40, rotateButtonSize));
-
-    // คำนวณตำแหน่งปุ่มหมุนโดยไม่ให้หมุนตาม zone
-    const zoneCenterX = zone.x * zoomLevel + panOffset.x + (zone.width * zoomLevel) / 2;
-    const zoneCenterY = zone.y * zoomLevel + panOffset.y + (zone.height * zoomLevel) / 2;
-    const rotateButtonX = zoneCenterX - finalRotateButtonSize / 2;
-    const rotateButtonY = zoneCenterY - (zone.height * zoomLevel) / 2 - rotateButtonDistance - finalRotateButtonSize / 2;
-
     return (
-      <div key={zone.id} className="group">
-        {/* Zone หลัก */}
+      <div
+        key={zone.id}
+        className={`absolute ${displayZone.shape !== "triangle" ? zoneColors.bgOpacity : ""} ${
+          displayZone.shape !== "triangle" ? zoneColors.border : ""
+        } 
+          ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
+          transition-opacity cursor-move group
+          ${isSelected && selectedZones.length > 1 ? "cursor-move" : ""}`}
+        style={{
+          left: zone.x * zoomLevel + panOffset.x,
+          top: zone.y * zoomLevel + panOffset.y,
+          width: zone.width * zoomLevel,
+          height: zone.height * zoomLevel,
+          zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
+          transform: `rotate(${zone.rotation || 0}deg)`,
+          transformOrigin: "center",
+          ...getShapeStyles(displayZone.shape),
+          ...(isSelected && {
+            boxShadow: "0 0 0 3px rgba(59, 130, 246, 0.3)",
+            ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
+          })
+        }}
+        onMouseDown={e => handleZoneMouseDown(e, zone)}
+        onDoubleClick={e => handleZoneDoubleClick(e, zone)}
+      >
         <div
-          className={`absolute ${displayZone.shape !== "triangle" ? zoneColors.bgOpacity : "bg-transparent"} ${
-            displayZone.shape !== "triangle" ? zoneColors.border : ""
-          } 
-            ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
-            transition-opacity cursor-move
-            ${isSelected && selectedZones.length > 1 ? "cursor-move" : ""}`}
-          style={{
-            left: zone.x * zoomLevel + panOffset.x,
-            top: zone.y * zoomLevel + panOffset.y,
-            width: zone.width * zoomLevel,
-            height: zone.height * zoomLevel,
-            zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
-            transform: `rotate(${zone.rotation || 0}deg)`,
-            transformOrigin: "center",
-            ...getShapeStyles(displayZone.shape),
-            ...((isSelected || isClickedSingle) && {
-              boxShadow: `0 0 0 3px ${isSelected ? "rgba(59, 130, 246, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-              ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
-            })
-          }}
-          onMouseDown={e => handleZoneMouseDown(e, zone)}
-          onDoubleClick={e => handleZoneDoubleClick(e, zone)}
-          onClick={e => {
-            e.stopPropagation();
-            // ถ้าไม่ได้กำลังลาก ให้เลือก zone นี้
-            if (!isDraggingZone && !isResizingZone && !isRotatingZone) {
-              setClickedZone(zone);
-              setClickedMarker(null);
-              // ล้างการเลือกแบบกลุ่ม
-              setSelectedMarkers([]);
-              setSelectedZones([]);
-            }
-          }}
+          className="absolute top-1 left-1 bg-white bg-opacity-90 px-2 py-1 rounded font-medium text-gray-700"
+          style={{ fontSize: `${Math.max(10, 12 * zoomLevel)}px` }}
         >
-          <div
-            className={`absolute rounded font-medium ${
-              displayZone.shape === "triangle"
-                ? "left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2"
-                : displayZone.shape === "circle"
-                ? "top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
-                : "top-1 left-1"
-            }`}
-            style={{
-              fontSize: (() => {
-                const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
-                const baseFontSize = Math.max(6, Math.min(18, zoneSize / 6));
-                return `${Math.max(6, Math.min(baseFontSize, 16))}px`;
-              })(),
-              padding: (() => {
-                const zoneSize = Math.min(zone.width * zoomLevel, zone.height * zoomLevel);
-                if (zoneSize < 40) return "0px 1px";
-                if (zoneSize < 80) return "1px 2px";
-                if (zoneSize < 120) return "2px 4px";
-                return "4px 8px";
-              })(),
-              display: Math.min(zone.width * zoomLevel, zone.height * zoomLevel) < 25 ? "none" : "block",
-              maxWidth: `${Math.max(0, zone.width * zoomLevel - 8)}px`,
-              maxHeight: `${Math.max(0, zone.height * zoomLevel - 8)}px`,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              backgroundColor: (() => {
-                const colorMapping = {
-                  blue: "rgba(59, 130, 246, 0.9)",
-                  purple: "rgba(147, 51, 234, 0.9)",
-                  orange: "rgba(249, 115, 22, 0.9)",
-                  emerald: "rgba(16, 185, 129, 0.9)",
-                  rose: "rgba(244, 63, 94, 0.9)",
-                  cyan: "rgba(6, 182, 212, 0.9)",
-                  amber: "rgba(245, 158, 11, 0.9)"
-                };
-                return colorMapping[displayZone.color] || colorMapping["blue"];
-              })(),
-              color: "white",
-              textShadow: "1px 1px 2px rgba(0,0,0,0.7)",
-              lineHeight: "1.2"
-            }}
-            title={displayZone.name}
-          >
-            {displayZone.name}
-          </div>
-
-          {/* เส้นขอบสำหรับสามเหลี่ยม */}
-          {displayZone.shape === "triangle" && (
-            <svg
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                width: "100%",
-                height: "100%"
-              }}
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-            >
-              <polygon
-                points="50,0 0,100 100,100"
-                fill={(() => {
-                  const colorMapping = {
-                    blue: "rgba(59, 130, 246, 0.3)",
-                    purple: "rgba(147, 51, 234, 0.3)",
-                    orange: "rgba(249, 115, 22, 0.3)",
-                    emerald: "rgba(16, 185, 129, 0.3)",
-                    rose: "rgba(244, 63, 94, 0.3)",
-                    cyan: "rgba(6, 182, 212, 0.3)",
-                    amber: "rgba(245, 158, 11, 0.3)"
-                  };
-                  return colorMapping[displayZone.color] || colorMapping["blue"];
-                })()}
-                stroke={
-                  isSelected
-                    ? "#3B82F6"
-                    : isClickedSingle
-                    ? "#EF4444"
-                    : {
-                        blue: "#3B82F6",
-                        purple: "#9333EA",
-                        orange: "#F97316",
-                        emerald: "#10B981",
-                        rose: "#F43F5E",
-                        cyan: "#06B6D4",
-                        amber: "#F59E0B"
-                      }[displayZone.color] || "#3B82F6"
-                }
-                strokeWidth="2"
-                strokeDasharray={isSelected || isClickedSingle ? "none" : "4,2"}
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
-          )}
-
-          {/* จุดจับสำหรับปรับขนาด */}
-          {resizeHandles.map(handle => {
-            // คำนวณขนาดจุดจับที่เหมาะสม - ปรับให้มองเห็นได้ดีแม้เมื่อ zoom มาก
-            const zoneDisplaySize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel);
-            let handleSize;
-
-            if (zoomLevel >= 2) {
-              // เมื่อ zoom มาก ให้จุดจับมีขนาดคงที่เพื่อให้คลิกได้ง่าย
-              handleSize = Math.max(16, Math.min(20, zoneDisplaySize / 10));
-            } else {
-              // zoom ปกติ
-              handleSize = zoneDisplaySize > 200 ? 20 : Math.max(12, 16 * zoomLevel);
-            }
-
-            handleSize = Math.max(12, Math.min(24, handleSize)); // จำกัดขนาดขั้นต่ำและสูงสุด
-            const handleOffset = handleSize / 2;
-
-            return (
-              <div
-                key={handle.position}
-                className={`absolute bg-white border-3 ${zoneColors.border} rounded-full 
-                opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl ring-1 ring-gray-300`}
-                style={{
-                  ...handle.style,
-                  // ปรับตำแหน่งให้ถูกต้องตามขนาดจุดจับ
-                  ...(handle.style.top === -5 && { top: -handleOffset }),
-                  ...(handle.style.bottom === -5 && { bottom: -handleOffset }),
-                  ...(handle.style.left === -5 && { left: -handleOffset }),
-                  ...(handle.style.right === -5 && { right: -handleOffset }),
-                  width: `${handleSize}px`,
-                  height: `${handleSize}px`,
-                  cursor: handle.cursor,
-                  zIndex: 1001,
-                  boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
-                }}
-                onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
-              />
-            );
-          })}
+          {zoneShapeOptions.find(s => s.value === displayZone.shape)?.icon} {displayZone.name}
         </div>
 
-        {/* ปุ่มหมุนแยกต่างหาก - ไม่ได้รับผลกระทบจากการหมุน zone */}
+        {/* จุดจับสำหรับหมุน */}
         <div
-          key={`${zone.id}-rotate`}
-          className={`absolute bg-white rounded-full shadow-xl border-2 border-gray-300 flex items-center justify-center cursor-pointer transition-opacity duration-200
-            opacity-0 group-hover:opacity-100`}
+          className="absolute left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-md 
+            flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity duration-200"
           style={{
-            left: rotateButtonX,
-            top: rotateButtonY,
-            width: `${finalRotateButtonSize}px`,
-            height: `${finalRotateButtonSize}px`,
-            zIndex: 1002, // สูงกว่า resize handles
-            pointerEvents: "auto",
-            background: "linear-gradient(180deg, #fff 80%, #e0e7ef 100%)",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px white"
+            top: `-${32 * zoomLevel}px`,
+            width: `${24 * zoomLevel}px`,
+            height: `${24 * zoomLevel}px`
           }}
-          onMouseDown={e => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleZoneMouseDown(e, zone, "rotate");
-          }}
+          onMouseDown={e => handleZoneMouseDown(e, zone, "rotate")}
           title="หมุนพื้นที่"
         >
           <svg
             className="text-gray-600"
-            style={{
-              width: `${Math.max(14, Math.min(20, finalRotateButtonSize * 0.6))}px`,
-              height: `${Math.max(14, Math.min(20, finalRotateButtonSize * 0.6))}px`
-            }}
+            style={{ width: `${16 * zoomLevel}px`, height: `${16 * zoomLevel}px` }}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -3604,6 +2082,24 @@ export default function VillageMap() {
             />
           </svg>
         </div>
+
+        {/* จุดจับสำหรับปรับขนาด - ไม่แสดงสำหรับรูปสามเหลี่ยม */}
+        {displayZone.shape !== "triangle" &&
+          resizeHandles.map(handle => (
+            <div
+              key={handle.position}
+              className={`absolute bg-white border-2 ${zoneColors.border} rounded-full 
+              opacity-0 group-hover:opacity-100 transition-opacity duration-200`}
+              style={{
+                ...handle.style,
+                width: `${12 * zoomLevel}px`,
+                height: `${12 * zoomLevel}px`,
+                cursor: handle.cursor,
+                zIndex: 1001
+              }}
+              onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
+            />
+          ))}
       </div>
     );
   };
@@ -3636,11 +2132,6 @@ export default function VillageMap() {
       setShowEditZoneModal(false);
       setEditZoneData(null);
       setOriginalZoneData(null);
-
-      // อัพเดทกลุ่มของ markers หลังจากแก้ไข zone (อัพเดทชื่อกลุ่ม)
-      setTimeout(() => {
-        updateMarkersGroup();
-      }, 50);
     }
   };
 
@@ -3675,8 +2166,6 @@ export default function VillageMap() {
   const clearSelection = () => {
     setSelectedMarkers([]);
     setSelectedZones([]);
-    setClickedMarker(null);
-    setClickedZone(null);
     setIsGroupSelecting(false);
     setGroupSelectionStart(null);
     setGroupSelectionEnd(null);
@@ -3749,438 +2238,6 @@ export default function VillageMap() {
     setPanOffset({ x: 0, y: 0 });
   };
 
-  // ฟังก์ชัน copy zones ที่เลือก
-  const copySelectedZones = () => {
-    if (selectedZones.length === 0) return;
-
-    const zonesToCopy = zones.filter(zone => selectedZones.includes(zone.id));
-    setCopiedZones(zonesToCopy);
-
-    // แสดงข้อความแจ้งเตือนสั้นๆ
-    console.log(`คัดลอก ${zonesToCopy.length} zone แล้ว`);
-  };
-
-  // ฟังก์ชัน paste zones
-  const pasteZones = () => {
-    if (copiedZones.length === 0) return;
-
-    const newZones = copiedZones.map(originalZone => {
-      const newZone = {
-        ...originalZone,
-        id: Date.now() + Math.random(), // สร้าง id ใหม่
-        name: `${originalZone.name} (Copy)`, // เพิ่ม (Copy) ในชื่อ
-        // เลื่อนตำแหน่งเล็กน้อยเพื่อไม่ให้ซ้อนทับกัน
-        x: originalZone.x + 20,
-        y: originalZone.y + 20,
-        originalX: originalZone.x + 20,
-        originalY: originalZone.y + 20
-      };
-      return newZone;
-    });
-
-    // เพิ่ม zones ใหม่
-    setZones(prevZones => [...prevZones, ...newZones]);
-
-    // บันทึกประวัติสำหรับแต่ละ zone ที่สร้าง
-    newZones.forEach(zone => {
-      addToHistory(ACTION_TYPES.ADD_ZONE, zone);
-    });
-
-    // ตั้งค่าการมองเห็นสำหรับ zones ใหม่
-    const newVisibleZones = {};
-    newZones.forEach(zone => {
-      newVisibleZones[zone.id] = true;
-    });
-    setVisibleZones(prev => ({ ...prev, ...newVisibleZones }));
-
-    // เลือก zones ใหม่ที่เพิ่งวาง
-    setSelectedZones(newZones.map(zone => zone.id));
-    setSelectedMarkers([]); // ล้างการเลือก markers
-
-    console.log(`วาง ${newZones.length} zone แล้ว`);
-  };
-
-  // ฟังก์ชัน copy markers ที่เลือก
-  const copySelectedMarkers = () => {
-    if (selectedMarkers.length === 0) return;
-
-    const markersToCopy = markers.filter(marker => selectedMarkers.includes(marker.id));
-    setCopiedMarkers(markersToCopy);
-
-    // แสดงข้อความแจ้งเตือนสั้นๆ
-    console.log(`คัดลอก ${markersToCopy.length} marker แล้ว`);
-  };
-
-  // ฟังก์ชัน paste markers
-  const pasteMarkers = () => {
-    if (copiedMarkers.length === 0) return;
-
-    const newMarkers = copiedMarkers.map(originalMarker => {
-      const newMarker = {
-        ...originalMarker,
-        id: Date.now() + Math.random(), // สร้าง id ใหม่
-        name: `${originalMarker.name} (Copy)`, // เพิ่ม (Copy) ในชื่อ
-        // เลื่อนตำแหน่งเล็กน้อยเพื่อไม่ให้ซ้อนทับกัน
-        x: originalMarker.x + 20,
-        y: originalMarker.y + 20,
-        originalX: originalMarker.x + 20,
-        originalY: originalMarker.y + 20
-      };
-      return newMarker;
-    });
-
-    // เพิ่ม markers ใหม่
-    setMarkers(prevMarkers => [...prevMarkers, ...newMarkers]);
-
-    // บันทึกประวัติสำหรับแต่ละ marker ที่สร้าง
-    newMarkers.forEach(marker => {
-      addToHistory(ACTION_TYPES.ADD_MARKER, marker);
-    });
-
-    // เลือก markers ใหม่ที่เพิ่งวาง
-    setSelectedMarkers(newMarkers.map(marker => marker.id));
-    setSelectedZones([]); // ล้างการเลือก zones
-
-    console.log(`วาง ${newMarkers.length} marker แล้ว`);
-  };
-
-  // ฟังก์ชันลบ objects ที่เลือก
-  const deleteSelectedObjects = () => {
-    let deletedCount = 0;
-    const deletedMarkers = [];
-    const deletedZones = [];
-
-    // ลบ marker ที่คลิกเดี่ยว
-    if (clickedMarker) {
-      deletedMarkers.push(clickedMarker);
-      setMarkers(prevMarkers => prevMarkers.filter(marker => marker.id !== clickedMarker.id));
-      addToHistory(ACTION_TYPES.REMOVE_MARKER, clickedMarker);
-      deletedCount += 1;
-    }
-
-    // ลบ zone ที่คลิกเดี่ยว
-    if (clickedZone) {
-      deletedZones.push(clickedZone);
-      setZones(prevZones => prevZones.filter(zone => zone.id !== clickedZone.id));
-      addToHistory(ACTION_TYPES.REMOVE_ZONE, clickedZone);
-      deletedCount += 1;
-    }
-
-    // ลบ markers ที่เลือกแบบกลุ่ม
-    if (selectedMarkers.length > 0) {
-      const markersToDelete = markers.filter(marker => selectedMarkers.includes(marker.id));
-      deletedMarkers.push(...markersToDelete);
-
-      setMarkers(prevMarkers => prevMarkers.filter(marker => !selectedMarkers.includes(marker.id)));
-
-      // บันทึกประวัติการลบ markers
-      markersToDelete.forEach(marker => {
-        addToHistory(ACTION_TYPES.REMOVE_MARKER, marker);
-      });
-
-      deletedCount += markersToDelete.length;
-    }
-
-    // ลบ zones ที่เลือกแบบกลุ่ม
-    if (selectedZones.length > 0) {
-      const zonesToDelete = zones.filter(zone => selectedZones.includes(zone.id));
-      deletedZones.push(...zonesToDelete);
-
-      setZones(prevZones => prevZones.filter(zone => !selectedZones.includes(zone.id)));
-
-      // บันทึกประวัติการลบ zones
-      zonesToDelete.forEach(zone => {
-        addToHistory(ACTION_TYPES.REMOVE_ZONE, zone);
-      });
-
-      deletedCount += zonesToDelete.length;
-    }
-
-    // ล้างการเลือกทั้งหมด
-    clearSelection();
-
-    // แสดงข้อความแจ้งเตือน
-    const deletedItems = [];
-    if (deletedMarkers.length > 0) deletedItems.push(`${deletedMarkers.length} markers`);
-    if (deletedZones.length > 0) deletedItems.push(`${deletedZones.length} zones`);
-
-    if (deletedItems.length > 0) {
-      console.log(`ลบ ${deletedItems.join(" และ ")} แล้ว`);
-    }
-  };
-
-  // ฟังก์ชันรีเซ็ต marker ทั้งหมด
-  const resetAllMarkers = () => {
-    console.log("🔄 ======= resetAllMarkers เริ่มทำงาน =======");
-    console.log("🔄 markers ปัจจุบัน:", markers.length, "markers");
-
-    const markerCount = markers.length;
-
-    // ลบ early return - บังคับลบแม้จะว่าง
-    console.log("🔄 บังคับลบ markers ทั้งหมดไม่ว่าจะมีหรือไม่มี...");
-
-    // บันทึกประวัติการลบ markers ทั้งหมด (ถ้ามี)
-    if (markers.length > 0) {
-      const currentMarkers = [...markers];
-      currentMarkers.forEach(marker => {
-        addToHistory(ACTION_TYPES.REMOVE_MARKER, marker);
-      });
-    }
-
-    console.log("🔄 กำลังลบ markers ทั้งหมด...");
-
-    // บังคับลบ markers ทั้งหมด
-    setMarkers([]);
-
-    // ล้างการเลือกและ state ที่เกี่ยวข้องทั้งหมด
-    setSelectedMarkers([]);
-    setClickedMarker(null);
-    setDraggedMarker(null);
-    setDraggedListMarker(null);
-
-    // ปิด popup และ modal ที่เกี่ยวข้องกับ marker
-    setShowPopup(false);
-    setShowEditMarkerModal(false);
-    setEditMarkerData(null);
-    setOriginalMarkerData(null);
-
-    // ล้าง marker sizes
-    setMarkerSizes({});
-
-    // Force re-render หลายครั้งเพื่อให้แน่ใจ
-    console.log("🔄 Force re-render หลายครั้ง...");
-    setForceRenderKey(prev => {
-      const newKey = prev + 1;
-      console.log(`🔄 Force render key: ${newKey}`);
-      return newKey;
-    });
-
-    // Async force re-render
-    setTimeout(() => {
-      console.log("🔄 Async force re-render...");
-      setForceRenderKey(prev => prev + 1);
-
-      // ลบซ้ำอีกครั้งใน async
-      setMarkers([]);
-    }, 50);
-
-    console.log(`✅ ลบ marker ทั้งหมด ${markerCount} รายการเรียบร้อยแล้ว!`);
-    console.log("🔄 ======= resetAllMarkers เสร็จสิ้น =======");
-  };
-
-  // ฟังก์ชันลบ zones ทั้งหมด
-  const deleteAllZones = () => {
-    console.log("🗑️ ======= deleteAllZones เริ่มทำงาน =======");
-    console.log("🗑️ zones ปัจจุบัน:", zones.length, "zones");
-
-    const zoneCount = zones.length;
-
-    // ลบ early return - บังคับลบแม้จะว่าง
-    console.log("🗑️ บังคับลบ zones ทั้งหมดไม่ว่าจะมีหรือไม่มี...");
-
-    // บันทึกประวัติการลบ zones ทั้งหมด (ถ้ามี)
-    if (zones.length > 0) {
-      const currentZones = [...zones];
-      currentZones.forEach(zone => {
-        addToHistory(ACTION_TYPES.REMOVE_ZONE, zone);
-      });
-    }
-
-    console.log("🗑️ กำลังลบ zones ทั้งหมด...");
-
-    // บังคับลบ zones ทั้งหมด
-    setZones([]);
-    setVisibleZones({});
-
-    // ล้างการเลือกและ state ที่เกี่ยวข้องทั้งหมด
-    setSelectedZones([]);
-    setClickedZone(null);
-    setDraggedZone(null);
-
-    // ปิด modal ที่เกี่ยวข้องกับ zone
-    setShowZoneModal(false);
-    setZoneFormData({ name: "", color: "blue" });
-    setCurrentSelection(null);
-
-    // Force re-render หลายครั้งเพื่อให้แน่ใจ
-    console.log("🗑️ Force re-render หลายครั้ง...");
-    setForceRenderKey(prev => {
-      const newKey = prev + 1;
-      console.log(`🗑️ Force render key: ${newKey}`);
-      return newKey;
-    });
-
-    // Async force re-render
-    setTimeout(() => {
-      console.log("🗑️ Async force re-render...");
-      setForceRenderKey(prev => prev + 1);
-
-      // ลบซ้ำอีกครั้งใน async
-      setZones([]);
-      setVisibleZones({});
-    }, 50);
-
-    console.log(`✅ ลบ zone ทั้งหมด ${zoneCount} รายการเรียบร้อยแล้ว!`);
-    console.log("🗑️ ======= deleteAllZones เสร็จสิ้น =======");
-  };
-
-  // ฟังก์ชันรีเซ็ตทุกอย่าง
-  const resetEverything = () => {
-    console.log("🔥 ======= resetEverything() เริ่มทำงาน =======");
-    const markerCount = markers.length;
-    const zoneCount = zones.length;
-    console.log("🔥 จำนวน markers ก่อนลบ:", markerCount);
-    console.log("🔥 จำนวน zones ก่อนลบ:", zoneCount);
-
-    // ลบ early return - บังคับลบแม้จะว่าง
-    console.log("🔥 บังคับลบทุกอย่างไม่ว่าจะมีหรือไม่มี...");
-
-    console.log("🔥 กำลังบันทึกประวัติ...");
-    // บันทึกประวัติการลบทุกอย่าง (ถ้ามี)
-    if (markers.length > 0) {
-      markers.forEach(marker => {
-        addToHistory(ACTION_TYPES.REMOVE_MARKER, marker);
-      });
-    }
-
-    if (zones.length > 0) {
-      zones.forEach(zone => {
-        addToHistory(ACTION_TYPES.REMOVE_ZONE, zone);
-      });
-    }
-
-    console.log("🔥 กำลังลบทุกอย่าง...");
-    // บังคับลบทุกอย่าง
-    console.log("🔥 เรียก setMarkers([])...");
-    setMarkers([]);
-    console.log("🔥 เรียก setZones([])...");
-    setZones([]);
-    console.log("🔥 เรียก setVisibleZones({})...");
-    setVisibleZones({});
-
-    console.log("🔥 กำลังล้างการเลือก...");
-    // ล้างการเลือกทั้งหมด
-    setSelectedMarkers([]);
-    setSelectedZones([]);
-    setClickedMarker(null);
-    setClickedZone(null);
-
-    console.log("🔥 กำลังล้าง copy/paste...");
-    // ล้าง copy/paste
-    setCopiedMarkers([]);
-    setCopiedZones([]);
-
-    // Force re-render หลายครั้ง
-    console.log("🔥 Force re-render หลายครั้ง...");
-    setForceRenderKey(prev => prev + 1);
-
-    // Async force re-render
-    setTimeout(() => {
-      console.log("🔥 Async force re-render...");
-      setForceRenderKey(prev => prev + 1);
-
-      // ลบซ้ำอีกครั้งใน async
-      setMarkers([]);
-      setZones([]);
-      setVisibleZones({});
-    }, 50);
-
-    console.log(`🔥 ✅ ลบทุกอย่างแล้ว: ${markerCount} markers และ ${zoneCount} zones`);
-    console.log("🔥 ======= resetEverything() เสร็จสิ้น =======");
-  };
-
-  // เพิ่มฟังก์ชันจัดการคำสั่งเสียง
-  const handleVoiceCommand = (command, data) => {
-    console.log("🎤 ========== handleVoiceCommand ถูกเรียก ==========");
-    console.log("🎤 รับคำสั่งเสียง:", command, data);
-    console.log("🎤 ประเภทคำสั่ง:", typeof command);
-    console.log("🎤 คำสั่งที่ได้รับเป็น:", JSON.stringify(command));
-
-    switch (command) {
-      case "CREATE_ZONE":
-        // เปิด modal สร้าง zone
-        setZoneFormData({ name: "Zone จากเสียง", color: "blue" });
-        setShowZoneModal(true);
-        console.log("🎯 Voice: เปิด modal สร้าง Zone");
-        break;
-
-      case "DELETE":
-        // ลบ object ที่เลือก
-        deleteSelectedObjects();
-        console.log("🗑️ Voice: ลบ object ที่เลือก");
-        break;
-
-      case "UNDO":
-        // ย้อนกลับ
-        undo();
-        console.log("↶ Voice: Undo");
-        break;
-
-      case "REDO":
-        // ทำซ้ำ
-        redo();
-        console.log("↷ Voice: Redo");
-        break;
-
-      case "ZOOM_IN":
-        // ซูมเข้า
-        setZoomLevel(prev => Math.min(prev * 1.2, 5));
-        console.log("🔍 Voice: Zoom In");
-        break;
-
-      case "ZOOM_OUT":
-        // ซูมออก
-        setZoomLevel(prev => Math.max(prev / 1.2, 0.1));
-        console.log("🔍 Voice: Zoom Out");
-        break;
-
-      case "RESET":
-        // รีเซ็ต zoom และ pan
-        resetZoomAndPan();
-        console.log("🏠 Voice: Reset");
-        break;
-
-      case "CLEAR_SELECTION":
-        // ยกเลิกการเลือก
-        clearSelection();
-        console.log("✕ Voice: Clear Selection");
-        break;
-
-      case "RESET_ALL_MARKERS":
-        // ลบ marker ทั้งหมด
-        console.log("🎤 Voice Command: RESET_ALL_MARKERS ได้รับแล้ว!");
-        console.log("🎤 จำนวน markers ก่อนลบ:", markers.length);
-        resetAllMarkers();
-        console.log("🔄 Voice: Reset All Markers - เสร็จแล้ว!");
-        break;
-
-      case "RESET_ALL_ZONES":
-        // ลบ zone ทั้งหมด
-        console.log("🎤 Voice Command: RESET_ALL_ZONES ได้รับแล้ว");
-        console.log("🎤 จำนวน zones ก่อนลบ:", zones.length);
-        deleteAllZones(); // ใช้ฟังก์ชันใหม่
-        console.log("🔄 Voice: Delete All Zones");
-        break;
-
-      case "RESET_EVERYTHING":
-        // ลบทุกอย่าง
-        resetEverything();
-        console.log("🔄 Voice: Reset Everything");
-        break;
-
-      case "UNKNOWN":
-        console.log("❓ Voice: ไม่เข้าใจคำสั่ง -", data);
-        // อาจจะแสดง toast หรือ alert
-        break;
-
-      default:
-        console.log("❓ Voice Command ไม่รู้จัก:", command, data);
-        console.log(
-          "❓ Available commands: CREATE_ZONE, DELETE, UNDO, REDO, ZOOM_IN, ZOOM_OUT, RESET, CLEAR_SELECTION, RESET_ALL_MARKERS, RESET_ALL_ZONES, RESET_EVERYTHING, UNKNOWN"
-        );
-    }
-  };
-
   return (
     <div className="relative w-full max-w-4xl mx-auto">
       {isLoading ? (
@@ -4205,7 +2262,7 @@ export default function VillageMap() {
               onMouseLeave={handleMouseUp}
               onWheel={handleWheel}
               style={{
-                cursor: isPanning ? "grabbing" : isCtrlPressed ? "copy" : "crosshair"
+                cursor: isPanning ? "grabbing" : isCtrlPressed ? "grab" : "crosshair"
               }}
             >
               <img
@@ -4244,13 +2301,7 @@ export default function VillageMap() {
               </div>
 
               {/* แสดงกลุ่มที่มีการเปิดการแสดงผล */}
-              <div key={`zones-${forceRenderKey}`}>
-                {(() => {
-                  console.log("🔍 กำลังแสดง zones:", zones.length, "zones");
-                  console.log("🔍 visibleZones:", Object.keys(visibleZones).length, "visible zones");
-                  return zones.map(zone => renderZone(zone));
-                })()}
-              </div>
+              {zones.map(zone => renderZone(zone))}
 
               {/* แสดงพรีวิวกลุ่มขณะลาก */}
               {(isSelectingZone || (showZoneModal && currentSelection)) &&
@@ -4269,126 +2320,55 @@ export default function VillageMap() {
 
                   const currentColors = previewColors[zoneFormData.color] || previewColors.blue;
 
-                  const width =
-                    Math.abs(
-                      isSelectingZone && selectionStart && selectionEnd
-                        ? selectionEnd.x - selectionStart.x
-                        : currentSelection.endX - currentSelection.startX
-                    ) * zoomLevel;
-
-                  const height =
-                    Math.abs(
-                      isSelectingZone && selectionStart && selectionEnd
-                        ? selectionEnd.y - selectionStart.y
-                        : currentSelection.endY - currentSelection.startY
-                    ) * zoomLevel;
-
-                  const left =
-                    Math.min(
-                      isSelectingZone && selectionStart ? selectionStart.x : currentSelection.startX,
-                      isSelectingZone && selectionEnd ? selectionEnd.x : currentSelection.endX
-                    ) *
-                      zoomLevel +
-                    panOffset.x;
-
-                  const top =
-                    Math.min(
-                      isSelectingZone && selectionStart ? selectionStart.y : currentSelection.startY,
-                      isSelectingZone && selectionEnd ? selectionEnd.y : currentSelection.endY
-                    ) *
-                      zoomLevel +
-                    panOffset.y;
-
-                  // สีของเส้นขอบ
-                  const borderColor =
-                    {
-                      blue: "#3B82F6",
-                      purple: "#9333EA",
-                      orange: "#F97316",
-                      emerald: "#10B981",
-                      rose: "#F43F5E",
-                      cyan: "#06B6D4",
-                      amber: "#F59E0B"
-                    }[zoneFormData.color] || "#3B82F6";
-
-                  // สีพื้นหลัง
-                  const bgColor =
-                    {
-                      blue: "rgba(59, 130, 246, 0.3)",
-                      purple: "rgba(147, 51, 234, 0.3)",
-                      orange: "rgba(249, 115, 22, 0.3)",
-                      emerald: "rgba(16, 185, 129, 0.3)",
-                      rose: "rgba(244, 63, 94, 0.3)",
-                      cyan: "rgba(6, 182, 212, 0.3)",
-                      amber: "rgba(245, 158, 11, 0.3)"
-                    }[zoneFormData.color] || "rgba(59, 130, 246, 0.3)";
-
                   return (
                     <div
-                      className="absolute opacity-50 pointer-events-none"
+                      className={`absolute opacity-50 pointer-events-none ${
+                        selectedZoneShape === "circle"
+                          ? `${currentColors.bg} border-2 ${currentColors.border} border-dashed rounded-full`
+                          : selectedZoneShape === "triangle"
+                          ? currentColors.bg
+                          : `${currentColors.bg} border-2 ${currentColors.border} border-dashed`
+                      }`}
                       style={{
-                        left,
-                        top,
-                        width,
-                        height
+                        left:
+                          Math.min(
+                            isSelectingZone && selectionStart ? selectionStart.x : currentSelection.startX,
+                            isSelectingZone && selectionEnd ? selectionEnd.x : currentSelection.endX
+                          ) *
+                            zoomLevel +
+                          panOffset.x,
+                        top:
+                          Math.min(
+                            isSelectingZone && selectionStart ? selectionStart.y : currentSelection.startY,
+                            isSelectingZone && selectionEnd ? selectionEnd.y : currentSelection.endY
+                          ) *
+                            zoomLevel +
+                          panOffset.y,
+                        width:
+                          Math.abs(
+                            isSelectingZone && selectionStart && selectionEnd
+                              ? selectionEnd.x - selectionStart.x
+                              : currentSelection.endX - currentSelection.startX
+                          ) * zoomLevel,
+                        height:
+                          Math.abs(
+                            isSelectingZone && selectionStart && selectionEnd
+                              ? selectionEnd.y - selectionStart.y
+                              : currentSelection.endY - currentSelection.startY
+                          ) * zoomLevel,
+                        ...(selectedZoneShape === "triangle" && {
+                          clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)"
+                        })
                       }}
                     >
-                      {selectedZoneShape === "triangle" ? (
-                        <>
-                          {/* พื้นหลังสามเหลี่ยม */}
-                          <div
-                            className="absolute inset-0"
-                            style={{
-                              clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)",
-                              backgroundColor: bgColor
-                            }}
-                          />
-                          {/* เส้นขอบสามเหลี่ยม */}
-                          <svg
-                            className="absolute inset-0"
-                            style={{ width: "100%", height: "100%" }}
-                            viewBox="0 0 100 100"
-                            preserveAspectRatio="none"
-                          >
-                            <polygon
-                              points="50,0 0,100 100,100"
-                              fill={(() => {
-                                const colorMapping = {
-                                  blue: "rgba(59, 130, 246, 0.3)",
-                                  purple: "rgba(147, 51, 234, 0.3)",
-                                  orange: "rgba(249, 115, 22, 0.3)",
-                                  emerald: "rgba(16, 185, 129, 0.3)",
-                                  rose: "rgba(244, 63, 94, 0.3)",
-                                  cyan: "rgba(6, 182, 212, 0.3)",
-                                  amber: "rgba(245, 158, 11, 0.3)"
-                                };
-                                return colorMapping[zoneFormData.color] || colorMapping["blue"];
-                              })()}
-                              stroke={
-                                {
-                                  blue: "#3B82F6",
-                                  purple: "#9333EA",
-                                  orange: "#F97316",
-                                  emerald: "#10B981",
-                                  rose: "#F43F5E",
-                                  cyan: "#06B6D4",
-                                  amber: "#F59E0B"
-                                }[zoneFormData.color] || "#3B82F6"
-                              }
-                              strokeWidth="2"
-                              strokeDasharray="4,2"
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          </svg>
-                        </>
-                      ) : selectedZoneShape === "circle" ? (
+                      {/* เพิ่มเส้นขอบสำหรับสามเหลี่ยม */}
+                      {selectedZoneShape === "triangle" && (
                         <div
-                          className={`${currentColors.bg} border-2 ${
-                            currentColors.border
-                          } border-dashed rounded-full w-full h-full`}
+                          className={`absolute inset-0 border-2 ${currentColors.border} border-dashed`}
+                          style={{
+                            clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)"
+                          }}
                         />
-                      ) : (
-                        <div className={`${currentColors.bg} border-2 ${currentColors.border} border-dashed w-full h-full`} />
                       )}
                     </div>
                   );
@@ -4408,16 +2388,70 @@ export default function VillageMap() {
               )}
 
               {/* Markers */}
-              <div key={`markers-${forceRenderKey}`}>
-                {(() => {
-                  console.log("🔍 Rendering markers:", markers.length, "markers");
-                  console.log("🔍 Markers data:", JSON.stringify(markers, null, 2));
-                  console.log("🔍 forceRenderKey:", forceRenderKey);
-                  return markers.map(marker => renderMarker(marker, true));
-                })()}
-              </div>
+              {markers.map(marker => renderMarker(marker, true))}
             </div>
 
+            {/* คำแนะนำการใช้งาน */}
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+              <div className="font-medium mb-1">วิธีการใช้งาน:</div>
+              <ul className="space-y-1 text-xs">
+                <li>
+                  • <span className="font-semibold">คลิกเดียว</span> ที่ภาพเพื่อเพิ่มจุดสำคัญใหม่
+                </li>
+                <li>
+                  • <span className="font-semibold">กดค้างแล้วลาก</span> เพื่อสร้างกลุ่มใหม่
+                </li>
+                <li>• ลากจุดสีเพื่อย้ายตำแหน่ง</li>
+                <li>
+                  • <span className="font-semibold">Ctrl+Mouse wheel</span> เพื่อ Zoom in/out
+                </li>
+                <li>
+                  • <span className="font-semibold">Ctrl+คลิกแล้วลาก</span> หรือ{" "}
+                  <span className="font-semibold">Middle click ลาก</span> เพื่อ Pan รูปภาพ
+                </li>
+                <li>
+                  • <span className="font-semibold">Ctrl+0</span> เพื่อรีเซ็ต Zoom และ Pan
+                </li>
+                <li>
+                  • <span className="font-semibold">Shift+ลาก</span> เพื่อเลือกหลาย markers และ zones
+                </li>
+                <li>
+                  • <span className="font-semibold">คลิกที่ marker/zone ที่เลือกแล้วลาก</span> เพื่อย้ายทั้งกลุ่มพร้อมกัน
+                </li>
+                <li>• ลาก marker เข้าไปในกลุ่มเพื่อเปลี่ยนกลุ่มอัตโนมัติ</li>
+                <li>• กด ESC เพื่อยกเลิกการเลือก</li>
+                <li>• กด Ctrl+Z เพื่อ Undo การกระทำ, Ctrl+Shift+Z เพื่อ Redo</li>
+                <li>• ใช้ปุ่ม แสดง/ซ่อน เพื่อจัดการการแสดงผลกลุ่ม</li>
+                <li>
+                  • <span className="font-semibold">เลือกรูปทรง</span> ก่อนลากเพื่อสร้างกลุ่มรูปทรงต่างๆ
+                </li>
+              </ul>
+            </div>
+
+            {/* แสดงข้อมูลการเลือก */}
+            {(selectedMarkers.length > 0 || selectedZones.length > 0) && (
+              <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
+                <div className="font-medium">
+                  เลือกแล้ว: {selectedMarkers.length} markers
+                  {selectedZones.length > 0 && `, ${selectedZones.length} zones`}
+                </div>
+                <div className="text-xs mt-1">
+                  {isDraggingGroup
+                    ? "กำลังลากกลุ่ม markers..."
+                    : isDraggingZoneGroup
+                    ? "กำลังลากกลุ่ม zones..."
+                    : isDraggingMixed
+                    ? "กำลังลากกลุ่มผสม (markers และ zones)..."
+                    : selectedMarkers.length > 0 && selectedZones.length > 0
+                    ? "คลิกที่ marker หรือ zone ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่มพร้อมกัน"
+                    : selectedMarkers.length > 0
+                    ? "คลิกที่ marker ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"
+                    : "คลิกที่ zone ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"}
+                </div>
+              </div>
+            )}
+
+            {/* แสดงข้อมูล Zoom */}
             <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
               <div className="flex items-center justify-between">
                 <div>
@@ -4432,68 +2466,33 @@ export default function VillageMap() {
                   <button
                     onClick={undo}
                     disabled={currentIndex < 0}
-                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ย้อนกลับ (Back)"
+                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ย้อนกลับการกระทำ (Ctrl+Z)"
                   >
-                    ←
+                    ↶
                   </button>
                   <button
                     onClick={redo}
                     disabled={currentIndex >= history.length - 1}
-                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ถัดไป (Next)"
+                    className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-md hover:shadow-lg"
+                    title="ทำซ้ำการกระทำ (Ctrl+Shift+Z)"
                   >
-                    →
+                    ↷
                   </button>
                   <button
                     onClick={resetZoomAndPan}
-                    className="w-8 h-8 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    className="w-8 h-8 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
                     title="รีเซ็ต Zoom และ Pan (Ctrl+0)"
                   >
                     🏠
                   </button>
                   <button
                     onClick={clearSelection}
-                    className="w-8 h-8 bg-purple-500 text-white rounded-full text-sm hover:bg-purple-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
+                    className="w-8 h-8 bg-purple-500 text-white rounded-full text-sm hover:bg-purple-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
                     title="ยกเลิกการเลือก (ESC)"
                   >
                     ✕
                   </button>
-                  {/* Voice Control */}
-                  <VoiceControl onCommand={handleVoiceCommand} />
-                  {(copiedZones.length > 0 || copiedMarkers.length > 0) && (
-                    <button
-                      onClick={() => {
-                        if (copiedZones.length > 0) pasteZones();
-                        if (copiedMarkers.length > 0) pasteMarkers();
-                      }}
-                      className="w-8 h-8 bg-green-500 text-white rounded-full text-sm hover:bg-green-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                      title={(() => {
-                        const items = [];
-                        if (copiedZones.length > 0) items.push(`${copiedZones.length} zones`);
-                        if (copiedMarkers.length > 0) items.push(`${copiedMarkers.length} markers`);
-                        return `วาง ${items.join(" และ ")} (Ctrl+V)`;
-                      })()}
-                    >
-                      📋
-                    </button>
-                  )}
-                  {(selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone) && (
-                    <button
-                      onClick={deleteSelectedObjects}
-                      className="w-8 h-8 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                      title={(() => {
-                        if (clickedMarker) return `ลบ Marker "${clickedMarker.name}" (Delete)`;
-                        if (clickedZone) return `ลบ Zone "${clickedZone.name}" (Delete)`;
-                        const items = [];
-                        if (selectedMarkers.length > 0) items.push(`${selectedMarkers.length} markers`);
-                        if (selectedZones.length > 0) items.push(`${selectedZones.length} zones`);
-                        return `ลบ ${items.join(" และ ")} (Delete)`;
-                      })()}
-                    >
-                      🗑️
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="mb-2">
@@ -4516,122 +2515,6 @@ export default function VillageMap() {
                 </div>
               </div>
             </div>
-
-            {/* คำแนะนำการใช้งาน */}
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-              <div className="font-medium mb-1">วิธีการใช้งาน:</div>
-              <ul className="space-y-1 text-xs">
-                <li>
-                  • <span className="font-semibold">คลิกเดียว</span> ที่ภาพเพื่อเพิ่มจุดสำคัญใหม่
-                </li>
-                <li>
-                  • <span className="font-semibold">กดค้างแล้วลาก</span> เพื่อสร้างกลุ่มใหม่
-                </li>
-                <li>
-                  • <span className="font-semibold text-green-600">🆕 Ctrl+คลิก</span> ที่จุดใดๆ บนภาพ เพื่อสร้าง Zone อัตโนมัติ
-                  <span className="text-green-800 font-semibold">ครอบคลุมพื้นที่สีเดียวกันที่เชื่อมต่อกัน</span>รอบจุดที่คลิก
-                </li>
-                <li>• ลากจุดสีเพื่อย้ายตำแหน่ง</li>
-                <li>
-                  • <span className="font-semibold">Ctrl+Mouse wheel</span> เพื่อ Zoom in/out
-                </li>
-                <li>
-                  • <span className="font-semibold">Alt+คลิกแล้วลาก</span> หรือ{" "}
-                  <span className="font-semibold">Middle click ลาก</span> เพื่อ Pan รูปภาพ
-                </li>
-                <li>
-                  • <span className="font-semibold">Ctrl+0</span> เพื่อรีเซ็ต Zoom และ Pan
-                </li>
-                <li>
-                  • <span className="font-semibold">คลิกเดียว</span> ที่ marker/zone เพื่อเลือกเดี่ยว (แสดงขอบสี)
-                </li>
-                <li>
-                  • <span className="font-semibold">Shift+ลาก</span> เพื่อเลือกหลาย markers และ zones
-                </li>
-                <li>
-                  • <span className="font-semibold">คลิกที่ marker/zone ที่เลือกแล้วลาก</span> เพื่อย้ายทั้งกลุ่มพร้อมกัน
-                </li>
-                <li>• ลาก marker เข้าไปในกลุ่มเพื่อเปลี่ยนกลุ่มอัตโนมัติ</li>
-                <li>• กด ESC เพื่อยกเลิกการเลือก</li>
-                <li>• กด Ctrl+Z เพื่อ Undo การกระทำ, Ctrl+Shift+Z เพื่อ Redo</li>
-                <li>
-                  • <span className="font-semibold">Ctrl+C</span> เพื่อคัดลอก zones/markers ที่เลือก,{" "}
-                  <span className="font-semibold">Ctrl+V</span> เพื่อวาง zones/markers ที่คัดลอก
-                </li>
-                <li>
-                  • <span className="font-semibold">Delete</span> เพื่อลบ zones/markers ที่เลือก
-                </li>
-                <li>• ใช้ปุ่ม แสดง/ซ่อน เพื่อจัดการการแสดงผลกลุ่ม</li>
-                <li>
-                  • <span className="font-semibold">เลือกรูปทรง</span> ก่อนลากเพื่อสร้างกลุ่มรูปทรงต่างๆ
-                </li>
-                <li>• Markers จะถูกจัดกลุ่มอัตโนมัติตามตำแหน่งที่อยู่ในขอบเขต Zone (รองรับการหมุน)</li>
-              </ul>
-            </div>
-
-            {/* แสดงข้อมูลการเลือก */}
-            {(selectedMarkers.length > 0 || selectedZones.length > 0 || clickedMarker || clickedZone) && (
-              <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
-                <div className="font-medium">
-                  {clickedMarker || clickedZone ? (
-                    <>เลือก: {clickedMarker ? `Marker "${clickedMarker.name}"` : `Zone "${clickedZone.name}"`}</>
-                  ) : (
-                    <>
-                      เลือกแล้ว: {selectedMarkers.length} markers
-                      {selectedZones.length > 0 && `, ${selectedZones.length} zones`}
-                    </>
-                  )}
-                </div>
-                <div className="text-xs mt-1">
-                  {clickedMarker || clickedZone
-                    ? "กด Delete เพื่อลบ object นี้ หรือ ESC เพื่อยกเลิกการเลือก"
-                    : isDraggingGroup
-                    ? "กำลังลากกลุ่ม markers..."
-                    : isDraggingZoneGroup
-                    ? "กำลังลากกลุ่ม zones..."
-                    : isDraggingMixed
-                    ? "กำลังลากกลุ่มผสม (markers และ zones)..."
-                    : selectedMarkers.length > 0 && selectedZones.length > 0
-                    ? "คลิกที่ marker หรือ zone ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่มพร้อมกัน"
-                    : selectedMarkers.length > 0
-                    ? "คลิกที่ marker ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"
-                    : "คลิกที่ zone ใดๆ ที่เลือกไว้แล้วลากเพื่อเคลื่อนย้ายทั้งกลุ่ม"}
-                </div>
-                <div className="text-xs mt-1 font-medium text-gray-600">
-                  {clickedMarker || clickedZone
-                    ? "Delete เพื่อลบ, ESC เพื่อยกเลิกการเลือก"
-                    : "Ctrl+C เพื่อคัดลอก, Delete เพื่อลบ, ESC เพื่อยกเลิกการเลือก"}
-                </div>
-              </div>
-            )}
-
-            {/* แสดงข้อมูล Copy/Paste */}
-            {(copiedZones.length > 0 || copiedMarkers.length > 0) && (
-              <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
-                <div className="font-medium">
-                  คลิปบอร์ด:{" "}
-                  {(() => {
-                    const items = [];
-                    if (copiedZones.length > 0) items.push(`${copiedZones.length} zones`);
-                    if (copiedMarkers.length > 0) items.push(`${copiedMarkers.length} markers`);
-                    return items.join(" และ ");
-                  })()}{" "}
-                  พร้อมวาง
-                </div>
-                <div className="text-xs mt-1">
-                  กด Ctrl+V เพื่อวาง{" "}
-                  {(() => {
-                    const items = [];
-                    if (copiedZones.length > 0) items.push("zones");
-                    if (copiedMarkers.length > 0) items.push("markers");
-                    return items.join(" และ ");
-                  })()}{" "}
-                  ที่คัดลอกไว้
-                </div>
-              </div>
-            )}
-
-            {/* แสดงข้อมูล Zoom */}
           </div>
 
           {/* รายการกลุ่มด้านขวา */}
@@ -4905,16 +2788,8 @@ export default function VillageMap() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowZoneModal(false);
-                    setZoneFormData({ name: "", color: "blue" });
-                    // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
-                    setCurrentSelection(null);
-                    setIsSelectingZone(false);
-                    setSelectionStart(null);
-                    setSelectionEnd(null);
-                  }}
-                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200 cursor-pointer"
+                  onClick={closeZoneModal}
+                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
                 >
                   ยกเลิก
                 </button>
@@ -4974,11 +2849,8 @@ export default function VillageMap() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowPopup(false);
-                    setFormData({ name: "", group: "", color: "red" });
-                  }}
-                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200 cursor-pointer"
+                  onClick={closePopup}
+                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
                 >
                   ยกเลิก
                 </button>
@@ -5076,7 +2948,7 @@ export default function VillageMap() {
               <div className="flex justify-center space-x-3 pt-1">
                 <button
                   type="submit"
-                  className="w-12 h-12 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  className="w-12 h-12 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
                   title="บันทึกการแก้ไข"
                 >
                   <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
@@ -5095,12 +2967,10 @@ export default function VillageMap() {
                         ...prev,
                         [originalMarkerData.id]: originalMarkerData.size
                       }));
+                      setOriginalMarkerData(null);
                     }
-                    setShowEditMarkerModal(false);
-                    setEditMarkerData(null);
-                    setOriginalMarkerData(null);
                   }}
-                  className="w-12 h-12 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  className="w-12 h-12 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
                   title="ยกเลิกการแก้ไข"
                 >
                   <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
@@ -5118,7 +2988,7 @@ export default function VillageMap() {
                     setEditMarkerData(null);
                     setOriginalMarkerData(null);
                   }}
-                  className="w-12 h-12 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  className="w-12 h-12 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
                   title="รีเซ็ตตำแหน่งกลับไปที่ตำแหน่งเดิม"
                 >
                   <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
@@ -5136,7 +3006,7 @@ export default function VillageMap() {
                     setEditMarkerData(null);
                     setOriginalMarkerData(null);
                   }}
-                  className="w-12 h-12 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  className="w-12 h-12 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
                   title="ลบ marker นี้"
                 >
                   <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
@@ -5213,18 +3083,12 @@ export default function VillageMap() {
                 </div>
               </div>
 
-              <div className="flex justify-center space-x-3 pt-1">
+              <div className="flex space-x-2 pt-1">
                 <button
                   type="submit"
-                  className="w-12 h-12 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
-                  title="บันทึกการแก้ไข"
+                  className="flex-1 bg-blue-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-blue-600 transition-all duration-200"
                 >
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
-                    <span className="text-lg">💾</span>
-                  </div>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
-                    <span className="text-xs font-medium">บันทึก</span>
-                  </div>
+                  บันทึก
                 </button>
                 <button
                   type="button"
@@ -5237,16 +3101,14 @@ export default function VillageMap() {
                     setEditZoneData(null);
                     setOriginalZoneData(null);
                   }}
-                  className="w-12 h-12 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
-                  title="ยกเลิกการแก้ไข"
+                  className="flex-1 bg-gray-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-gray-600 transition-all duration-200"
                 >
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
-                    <span className="text-lg">✕</span>
-                  </div>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
-                    <span className="text-xs font-medium">ยกเลิก</span>
-                  </div>
+                  ยกเลิก
                 </button>
+              </div>
+
+              {/* เพิ่มปุ่มลบและรีเซ็ตตำแหน่ง */}
+              <div className="flex space-x-2 pt-2 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => {
@@ -5255,15 +3117,10 @@ export default function VillageMap() {
                     setEditZoneData(null);
                     setOriginalZoneData(null);
                   }}
-                  className="w-12 h-12 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  className="flex-1 bg-yellow-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
                   title="รีเซ็ตตำแหน่งกลับไปที่ตำแหน่งเดิม"
                 >
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
-                    <span className="text-lg">↺</span>
-                  </div>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
-                    <span className="text-xs font-medium">รีเซ็ต</span>
-                  </div>
+                  ↺
                 </button>
                 <button
                   type="button"
@@ -5273,15 +3130,10 @@ export default function VillageMap() {
                     setEditZoneData(null);
                     setOriginalZoneData(null);
                   }}
-                  className="w-12 h-12 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all duration-200 cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg relative overflow-hidden group"
+                  className="flex-1 bg-red-500 text-white py-1.5 px-3 rounded-md text-sm hover:bg-red-600 transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg"
                   title="ลบกลุ่มนี้"
                 >
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 group-hover:-translate-y-12">
-                    <span className="text-lg">🗑️</span>
-                  </div>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center transition-transform duration-300 translate-y-12 group-hover:translate-y-0">
-                    <span className="text-xs font-medium">ลบ</span>
-                  </div>
+                  🗑️
                 </button>
               </div>
             </form>

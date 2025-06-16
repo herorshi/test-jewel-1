@@ -264,19 +264,19 @@ export default function VillageMap() {
     const width = imageData.width;
     const height = imageData.height;
     const targetColor = getPixelColor(imageData, x, y);
-    
+
     // ตรวจสอบว่าเป็นสีขอบหรือไม่
     if (isEdgeColor(targetColor)) {
-      return { type: 'edge', direction: null };
+      return { type: "edge", direction: null };
     }
-    
+
     // ตรวจสอบรูปแบบการกระจายตัวของสีเดียวกัน
     const scanRadius = 50;
     const directions = {
       horizontal: { count: 0, maxStreak: 0, currentStreak: 0 },
       vertical: { count: 0, maxStreak: 0, currentStreak: 0 }
     };
-    
+
     // สแกนแนวนอน
     for (let dx = -scanRadius; dx <= scanRadius; dx++) {
       const checkX = x + dx;
@@ -285,16 +285,13 @@ export default function VillageMap() {
         if (colorsSimilar(color, targetColor, 15)) {
           directions.horizontal.count++;
           directions.horizontal.currentStreak++;
-          directions.horizontal.maxStreak = Math.max(
-            directions.horizontal.maxStreak, 
-            directions.horizontal.currentStreak
-          );
+          directions.horizontal.maxStreak = Math.max(directions.horizontal.maxStreak, directions.horizontal.currentStreak);
         } else {
           directions.horizontal.currentStreak = 0;
         }
       }
     }
-    
+
     // สแกนแนวตั้ง
     directions.vertical.currentStreak = 0;
     for (let dy = -scanRadius; dy <= scanRadius; dy++) {
@@ -304,31 +301,28 @@ export default function VillageMap() {
         if (colorsSimilar(color, targetColor, 15)) {
           directions.vertical.count++;
           directions.vertical.currentStreak++;
-          directions.vertical.maxStreak = Math.max(
-            directions.vertical.maxStreak, 
-            directions.vertical.currentStreak
-          );
+          directions.vertical.maxStreak = Math.max(directions.vertical.maxStreak, directions.vertical.currentStreak);
         } else {
           directions.vertical.currentStreak = 0;
         }
       }
     }
-    
+
     // วิเคราะห์รูปแบบ
     const hRatio = directions.horizontal.count / (scanRadius * 2 + 1);
     const vRatio = directions.vertical.count / (scanRadius * 2 + 1);
     const hStreak = directions.horizontal.maxStreak;
     const vStreak = directions.vertical.maxStreak;
-    
+
     // ตรวจจับประเภทพื้นที่
     if (hRatio > 0.7 && hStreak > scanRadius * 0.6) {
-      return { type: 'corridor', direction: 'horizontal', strength: hRatio };
+      return { type: "corridor", direction: "horizontal", strength: hRatio };
     } else if (vRatio > 0.7 && vStreak > scanRadius * 0.6) {
-      return { type: 'corridor', direction: 'vertical', strength: vRatio };
+      return { type: "corridor", direction: "vertical", strength: vRatio };
     } else if (hRatio > 0.4 && vRatio > 0.4) {
-      return { type: 'room', direction: 'both', strength: (hRatio + vRatio) / 2 };
+      return { type: "room", direction: "both", strength: (hRatio + vRatio) / 2 };
     } else {
-      return { type: 'irregular', direction: null, strength: Math.max(hRatio, vRatio) };
+      return { type: "irregular", direction: null, strength: Math.max(hRatio, vRatio) };
     }
   };
 
@@ -336,113 +330,115 @@ export default function VillageMap() {
   const createCorridorBounds = (imageData, x, y, direction, targetColor) => {
     const width = imageData.width;
     const height = imageData.height;
-    
-    let minX = x, maxX = x, minY = y, maxY = y;
-    
-    if (direction === 'horizontal') {
+
+    let minX = x,
+      maxX = x,
+      minY = y,
+      maxY = y;
+
+    if (direction === "horizontal") {
       // ขยายไปทางซ้าย
       for (let checkX = x - 1; checkX >= 0; checkX--) {
         const color = getPixelColor(imageData, checkX, y);
         if (!colorsSimilar(color, targetColor, 12)) break;
         minX = checkX;
       }
-      
+
       // ขยายไปทางขวา
       for (let checkX = x + 1; checkX < width; checkX++) {
         const color = getPixelColor(imageData, checkX, y);
         if (!colorsSimilar(color, targetColor, 12)) break;
         maxX = checkX;
       }
-      
+
       // หาความกว้างในแนวตั้ง
       for (let checkY = y - 1; checkY >= 0; checkY--) {
         const color = getPixelColor(imageData, x, checkY);
         if (!colorsSimilar(color, targetColor, 12)) break;
         minY = checkY;
       }
-      
+
       for (let checkY = y + 1; checkY < height; checkY++) {
         const color = getPixelColor(imageData, x, checkY);
         if (!colorsSimilar(color, targetColor, 12)) break;
         maxY = checkY;
       }
-      
-    } else if (direction === 'vertical') {
+    } else if (direction === "vertical") {
       // ขยายไปทางบน
       for (let checkY = y - 1; checkY >= 0; checkY--) {
         const color = getPixelColor(imageData, x, checkY);
         if (!colorsSimilar(color, targetColor, 12)) break;
         minY = checkY;
       }
-      
+
       // ขยายไปทางล่าง
       for (let checkY = y + 1; checkY < height; checkY++) {
         const color = getPixelColor(imageData, x, checkY);
         if (!colorsSimilar(color, targetColor, 12)) break;
         maxY = checkY;
       }
-      
+
       // หาความกว้างในแนวนอน
       for (let checkX = x - 1; checkX >= 0; checkX--) {
         const color = getPixelColor(imageData, checkX, y);
         if (!colorsSimilar(color, targetColor, 12)) break;
         minX = checkX;
       }
-      
+
       for (let checkX = x + 1; checkX < width; checkX++) {
         const color = getPixelColor(imageData, checkX, y);
         if (!colorsSimilar(color, targetColor, 12)) break;
         maxX = checkX;
       }
     }
-    
+
     return { minX, maxX, minY, maxY };
   };
 
   // ฟังก์ชันตรวจจับขอบเขตพื้นที่อัตโนมัติ (ปรับปรุงใหม่)
   const detectAreaBounds = (x, y) => {
-    return new Promise((resolve) => {
-              console.log(`🔍 เริ่มตรวจจับพื้นที่ที่ (${x.toFixed(1)}, ${y.toFixed(1)}) - ตรวจจับเฉพาะพื้นที่เชื่อมต่อกัน`);
-      
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+    return new Promise(resolve => {
+      console.log(`🔍 เริ่มตรวจจับพื้นที่ที่ (${x.toFixed(1)}, ${y.toFixed(1)}) - ตรวจจับเฉพาะพื้นที่เชื่อมต่อกัน`);
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
       const image = imageRef.current;
-      
+
       if (!image) {
-        console.log('❌ ไม่พบ image reference');
+        console.log("❌ ไม่พบ image reference");
         resolve(null);
         return;
       }
-      
+
       // ตั้งค่าขนาด canvas ให้เท่ากับรูปภาพ
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
       console.log(`📐 ขนาด Canvas: ${canvas.width}x${canvas.height}`);
-      
+
       // วาดรูปภาพลงใน canvas
       ctx.drawImage(image, 0, 0);
-      
+
       // แปลงตำแหน่งจาก display coordinates เป็น natural image coordinates
       const scaleX = image.naturalWidth / image.offsetWidth;
       const scaleY = image.naturalHeight / image.offsetHeight;
       const imageX = Math.floor(x * scaleX);
       const imageY = Math.floor(y * scaleY);
-      
+
       console.log(`📍 คลิกที่ display (${x.toFixed(1)}, ${y.toFixed(1)}) -> image (${imageX}, ${imageY})`);
       console.log(`🔍 อัตราส่วน: ${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}y`);
-      
+
       try {
         // ดึงข้อมูลสีที่จุดที่คลิก
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        
+
         // ประกาศตัวแปรสีเป้าหมาย (ใช้ let เพื่อให้สามารถ reassign ได้)
         let targetPixel = getPixelColor(imageData, imageX, imageY);
         console.log(`🎨 สีเป้าหมาย: RGB(${targetPixel.r}, ${targetPixel.g}, ${targetPixel.b})`);
-        
+
         // ตรวจสอบว่าเป็นสีขอบหรือไม่ (แต่ยืดหยุ่นขึ้น)
         if (isEdgeColor(targetPixel)) {
           console.log(`⚠️ คลิกที่สีขอบ RGB(${targetPixel.r}, ${targetPixel.g}, ${targetPixel.b}) - ลองหาสีใกล้เคียง...`);
-          
+
           // ลองหาสีที่ไม่ใช่ขอบในรัศมี 5 pixels
           let alternativeColor = null;
           for (let dy = -5; dy <= 5 && !alternativeColor; dy++) {
@@ -453,34 +449,38 @@ export default function VillageMap() {
                 const checkColor = getPixelColor(imageData, checkX, checkY);
                 if (!isEdgeColor(checkColor)) {
                   alternativeColor = checkColor;
-                  console.log(`🔍 พบสีใกล้เคียง RGB(${checkColor.r}, ${checkColor.g}, ${checkColor.b}) ที่ offset (${dx}, ${dy})`);
+                  console.log(
+                    `🔍 พบสีใกล้เคียง RGB(${checkColor.r}, ${checkColor.g}, ${checkColor.b}) ที่ offset (${dx}, ${dy})`
+                  );
                 }
               }
             }
           }
-          
+
           if (alternativeColor) {
             targetPixel = alternativeColor;
           } else {
-            console.log('❌ ไม่พบสีใกล้เคียงที่เหมาะสม');
+            console.log("❌ ไม่พบสีใกล้เคียงที่เหมาะสม");
             resolve(null);
             return;
           }
         }
-        
-        console.log('🔍 กำลังตรวจจับพื้นที่เชื่อมต่อกันรอบจุดที่คลิก...');
-        
+
+        console.log("🔍 กำลังตรวจจับพื้นที่เชื่อมต่อกันรอบจุดที่คลิก...");
+
         // ใช้ flood fill เฉพาะพื้นที่ที่เชื่อมต่อกันจากจุดคลิก (วิธีเดิมที่ทำงานได้ดี)
         const connectedRegion = floodFillFromPoint(imageData, imageX, imageY, targetPixel, 15);
-        
+
         if (!connectedRegion || connectedRegion.pixelCount < 1) {
-          console.log('❌ ไม่พบพื้นที่เชื่อมต่อกันที่เหมาะสม');
+          console.log("❌ ไม่พบพื้นที่เชื่อมต่อกันที่เหมาะสม");
           resolve(null);
           return;
         }
-        
-        console.log(`📦 พบพื้นที่เชื่อมต่อกัน: ${connectedRegion.pixelCount} pixels, ${connectedRegion.width}x${connectedRegion.height}`);
-        
+
+        console.log(
+          `📦 พบพื้นที่เชื่อมต่อกัน: ${connectedRegion.pixelCount} pixels, ${connectedRegion.width}x${connectedRegion.height}`
+        );
+
         // ปรับปรุงขอบเขตให้แม่นยำ
         const optimizedBounds = optimizeBounds(imageData, connectedRegion, targetPixel, 15);
         const bestRegion = {
@@ -491,49 +491,55 @@ export default function VillageMap() {
           width: optimizedBounds.maxX - optimizedBounds.minX + 1,
           height: optimizedBounds.maxY - optimizedBounds.minY + 1,
           pixelCount: connectedRegion.pixelCount,
-          areaType: 'connected'
+          areaType: "connected"
         };
-        
+
         console.log(`✨ ขอบเขตสุดท้าย: ${bestRegion.width}x${bestRegion.height}`);
-        
+
         // แปลงกลับเป็น display coordinates
         const displayBounds = {
           x: bestRegion.minX / scaleX,
           y: bestRegion.minY / scaleY,
           width: bestRegion.width / scaleX,
           height: bestRegion.height / scaleY,
-                     areaType: 'complete', // บอกว่าเป็นการตรวจจับแบบครบถ้วน
+          areaType: "complete", // บอกว่าเป็นการตรวจจับแบบครบถ้วน
           pixelCount: bestRegion.pixelCount
         };
-        
+
         // ตรวจสอบขนาดขั้นต่ำและสูงสุด
         const area = displayBounds.width * displayBounds.height;
         const imageArea = image.offsetWidth * image.offsetHeight;
         const areaRatio = area / imageArea;
-        
+
         console.log(`📊 ขนาด: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)}`);
-        console.log(`📊 อัตราส่วน: ${(areaRatio*100).toFixed(2)}% ของภาพ`);
+        console.log(`📊 อัตราส่วน: ${(areaRatio * 100).toFixed(2)}% ของภาพ`);
         console.log(`📊 จำนวน pixels: ${bestRegion.pixelCount.toLocaleString()}`);
-        
+
         // เกณฑ์การยอมรับ - ยอมรับทุกขนาด ไม่มีขีดจำกัดขั้นต่ำ
         const maxRatio = 0.5; // จำกัดเฉพาะขนาดสูงสุดเพื่อป้องกัน zone ใหญ่เกินไป
-        
+
         if (displayBounds.width > 0 && displayBounds.height > 0 && areaRatio <= maxRatio) {
-          
-          console.log(`✅ สร้าง Zone เชื่อมต่อกัน: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)} (${(areaRatio*100).toFixed(2)}%)`);
+          console.log(
+            `✅ สร้าง Zone เชื่อมต่อกัน: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)} (${(
+              areaRatio * 100
+            ).toFixed(2)}%)`
+          );
           resolve(displayBounds);
         } else {
-          console.log(`❌ ขนาดไม่เหมาะสม: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)} (${(areaRatio*100).toFixed(2)}%)`);
+          console.log(
+            `❌ ขนาดไม่เหมาะสม: ${displayBounds.width.toFixed(1)}x${displayBounds.height.toFixed(1)} (${(
+              areaRatio * 100
+            ).toFixed(2)}%)`
+          );
           resolve(null);
         }
-        
       } catch (error) {
-        console.log('❌ ข้อผิดพลาดในการตรวจจับพื้นที่:', error);
+        console.log("❌ ข้อผิดพลาดในการตรวจจับพื้นที่:", error);
         resolve(null);
       }
     });
   };
-  
+
   // ฟังก์ชันดึงสีของ pixel
   const getPixelColor = (imageData, x, y) => {
     const index = (y * imageData.width + x) * 4;
@@ -544,7 +550,7 @@ export default function VillageMap() {
       a: imageData.data[index + 3]
     };
   };
-  
+
   // ฟังก์ชันตรวจสอบว่าสีเหมือนกันหรือไม่ (ปรับให้ยืดหยุ่นขึ้น)
   const colorsSimilar = (color1, color2, tolerance = 12) => {
     // ใช้ Euclidean distance สำหรับความแม่นยำที่ดีขึ้น
@@ -552,15 +558,15 @@ export default function VillageMap() {
     const dg = color1.g - color2.g;
     const db = color1.b - color2.b;
     const distance = Math.sqrt(dr * dr + dg * dg + db * db);
-    
+
     // ปรับ tolerance ให้เหมาะสมกับ euclidean distance
     const euclideanTolerance = tolerance * 1.732; // sqrt(3) สำหรับ 3D space
-    
+
     return distance <= euclideanTolerance;
   };
 
   // ฟังก์ชันตรวจสอบว่าเป็นสีขอบ (เส้นแบ่ง) หรือไม่
-  const isEdgeColor = (color) => {
+  const isEdgeColor = color => {
     // ตรวจจับสีที่เป็นเส้นขอบ เช่น สีดำ สีเทาเข้ม หรือสีที่ใกล้เคียง
     const isDark = color.r < 80 && color.g < 80 && color.b < 80;
     const isGray = Math.abs(color.r - color.g) < 20 && Math.abs(color.g - color.b) < 20 && Math.abs(color.r - color.b) < 20;
@@ -573,39 +579,42 @@ export default function VillageMap() {
     if (!colorsSimilar(currentColor, targetColor)) {
       return true;
     }
-    
+
     // หยุดถ้าเจอสีขอบ
     if (isEdgeColor(currentColor)) {
       return true;
     }
-    
+
     // หยุดถ้าเจอสีที่แตกต่างมากจากสีเป้าหมาย
-    const colorDifference = Math.abs(currentColor.r - targetColor.r) + 
-                           Math.abs(currentColor.g - targetColor.g) + 
-                           Math.abs(currentColor.b - targetColor.b);
-    
+    const colorDifference =
+      Math.abs(currentColor.r - targetColor.r) +
+      Math.abs(currentColor.g - targetColor.g) +
+      Math.abs(currentColor.b - targetColor.b);
+
     return colorDifference > 25; // หยุดถ้าผลรวมความแตกต่างสีมากกว่า 25
   };
-  
+
   // ฟังก์ชัน flood fill แบบ Smart สำหรับห้อง/บล็อก
   const smartFloodFill = (imageData, startX, startY, targetColor, areaType) => {
     const width = imageData.width;
     const height = imageData.height;
     const visited = new Set();
     const stack = [{ x: startX, y: startY }];
-    
-    let minX = startX, maxX = startX;
-    let minY = startY, maxY = startY;
+
+    let minX = startX,
+      maxX = startX;
+    let minY = startY,
+      maxY = startY;
     let pixelCount = 0;
-    
+
     // ปรับ parameters ตามประเภทพื้นที่
     let maxPixels, tolerance;
     switch (areaType.type) {
-      case 'corridor':
+      case "corridor":
         maxPixels = 50000;
         tolerance = 15;
         break;
-      case 'room':
+      case "room":
         maxPixels = 25000;
         tolerance = 10;
         break;
@@ -613,49 +622,46 @@ export default function VillageMap() {
         maxPixels = 15000;
         tolerance = 8;
     }
-    
+
     while (stack.length > 0 && pixelCount < maxPixels) {
       const { x, y } = stack.pop();
       const key = `${x},${y}`;
-      
+
       if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
         continue;
       }
-      
+
       const currentColor = getPixelColor(imageData, x, y);
-      
+
       // ใช้ tolerance ที่เหมาะสมกับประเภทพื้นที่
       if (!colorsSimilar(currentColor, targetColor, tolerance)) {
         continue;
       }
-      
+
       // ตรวจสอบว่าเป็นขอบเขตหรือไม่
       if (isEdgeColor(currentColor)) {
         continue;
       }
-      
+
       visited.add(key);
       pixelCount++;
-      
+
       // อัพเดทขอบเขต
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
-      
+
       // เพิ่มจุดข้างเคียง
-      const neighbors = [
-        { x: x + 1, y }, { x: x - 1, y }, 
-        { x, y: y + 1 }, { x, y: y - 1 }
-      ];
-      
+      const neighbors = [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }];
+
       for (const neighbor of neighbors) {
         if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
           stack.push(neighbor);
         }
       }
     }
-    
+
     return { minX, maxX, minY, maxY, pixelCount };
   };
 
@@ -663,14 +669,17 @@ export default function VillageMap() {
   const findRoomBounds = (imageData, x, y, targetColor) => {
     const width = imageData.width;
     const height = imageData.height;
-    
+
     // หาขอบเขตด้วยการสแกนจากจุดกลาง
-    let minX = x, maxX = x, minY = y, maxY = y;
-    
+    let minX = x,
+      maxX = x,
+      minY = y,
+      maxY = y;
+
     // สแกนหาขอบซ้าย
     for (let checkX = x - 1; checkX >= 0; checkX--) {
       let shouldStop = false;
-      
+
       // ตรวจสอบแนวตั้งที่ตำแหน่งนี้
       for (let scanY = Math.max(0, y - 10); scanY <= Math.min(height - 1, y + 10); scanY++) {
         const color = getPixelColor(imageData, checkX, scanY);
@@ -679,15 +688,15 @@ export default function VillageMap() {
           break;
         }
       }
-      
+
       if (shouldStop) break;
       minX = checkX;
     }
-    
+
     // สแกนหาขอบขวา
     for (let checkX = x + 1; checkX < width; checkX++) {
       let shouldStop = false;
-      
+
       for (let scanY = Math.max(0, y - 10); scanY <= Math.min(height - 1, y + 10); scanY++) {
         const color = getPixelColor(imageData, checkX, scanY);
         if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
@@ -695,15 +704,15 @@ export default function VillageMap() {
           break;
         }
       }
-      
+
       if (shouldStop) break;
       maxX = checkX;
     }
-    
+
     // สแกนหาขอบบน
     for (let checkY = y - 1; checkY >= 0; checkY--) {
       let shouldStop = false;
-      
+
       for (let scanX = Math.max(0, minX); scanX <= Math.min(width - 1, maxX); scanX++) {
         const color = getPixelColor(imageData, scanX, checkY);
         if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
@@ -711,15 +720,15 @@ export default function VillageMap() {
           break;
         }
       }
-      
+
       if (shouldStop) break;
       minY = checkY;
     }
-    
+
     // สแกนหาขอบล่าง
     for (let checkY = y + 1; checkY < height; checkY++) {
       let shouldStop = false;
-      
+
       for (let scanX = Math.max(0, minX); scanX <= Math.min(width - 1, maxX); scanX++) {
         const color = getPixelColor(imageData, scanX, checkY);
         if (isEdgeColor(color) || !colorsSimilar(color, targetColor, 12)) {
@@ -727,11 +736,11 @@ export default function VillageMap() {
           break;
         }
       }
-      
+
       if (shouldStop) break;
       maxY = checkY;
     }
-    
+
     return { minX, maxX, minY, maxY };
   };
 
@@ -741,26 +750,26 @@ export default function VillageMap() {
     const height = imageData.height;
     const visited = new Array(width * height).fill(false);
     const regions = [];
-    
+
     console.log(`🔍 กำลังสแกนสี RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b}) ทั้งภาพ...`);
-    
+
     // สแกนทุก pixel ในภาพ
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const index = y * width + x;
-        
+
         if (visited[index]) continue;
-        
+
         const currentColor = getPixelColor(imageData, x, y);
-        
+
         // ตรวจสอบว่าสีตรงกับที่ต้องการหรือไม่
         if (!colorsSimilar(currentColor, targetColor, tolerance) || isEdgeColor(currentColor)) {
           continue;
         }
-        
+
         // เริ่ม flood fill จากจุดนี้
         const region = floodFillRegion(imageData, x, y, targetColor, visited, tolerance);
-        
+
         // เก็บเฉพาะ region ที่มีขนาดเหมาะสม
         if (region && region.pixelCount >= 50) {
           regions.push(region);
@@ -768,57 +777,58 @@ export default function VillageMap() {
         }
       }
     }
-    
+
     console.log(`✅ พบทั้งหมด ${regions.length} พื้นที่`);
     return regions;
   };
-  
+
   // ฟังก์ชัน flood fill สำหรับหา region เดียว
   const floodFillRegion = (imageData, startX, startY, targetColor, visited, tolerance) => {
     const width = imageData.width;
     const height = imageData.height;
     const stack = [{ x: startX, y: startY }];
-    
-    let minX = startX, maxX = startX;
-    let minY = startY, maxY = startY;
+
+    let minX = startX,
+      maxX = startX;
+    let minY = startY,
+      maxY = startY;
     let pixelCount = 0;
     const pixels = [];
-    
-    while (stack.length > 0 && pixelCount < 100000) { // จำกัดขนาดสูงสุด
+
+    while (stack.length > 0 && pixelCount < 100000) {
+      // จำกัดขนาดสูงสุด
       const { x, y } = stack.pop();
       const index = y * width + x;
-      
+
       if (x < 0 || x >= width || y < 0 || y >= height || visited[index]) {
         continue;
       }
-      
+
       const currentColor = getPixelColor(imageData, x, y);
-      
+
       if (!colorsSimilar(currentColor, targetColor, tolerance) || isEdgeColor(currentColor)) {
         continue;
       }
-      
+
       visited[index] = true;
       pixelCount++;
       pixels.push({ x, y });
-      
+
       // อัพเดทขอบเขต
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
-      
+
       // เพิ่มจุดข้างเคียง (4-connected)
-      stack.push(
-        { x: x + 1, y },
-        { x: x - 1, y },
-        { x, y: y + 1 },
-        { x, y: y - 1 }
-      );
+      stack.push({ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 });
     }
-    
+
     return {
-      minX, maxX, minY, maxY,
+      minX,
+      maxX,
+      minY,
+      maxY,
       width: maxX - minX + 1,
       height: maxY - minY + 1,
       pixelCount,
@@ -827,14 +837,14 @@ export default function VillageMap() {
       centerY: Math.floor((minY + maxY) / 2)
     };
   };
-  
+
   // ฟังก์ชันปรับขอบเขตให้แม่นยำขึ้น
   const optimizeBounds = (imageData, region, targetColor, tolerance = 12) => {
     let { minX, maxX, minY, maxY } = region;
-    
+
     // ปรับขอบเขตให้กระชับขึ้นโดยตรวจสอบขอบ
     let hasContent = false;
-    
+
     // ตรวจสอบขอบซ้าย
     for (let x = minX; x <= maxX; x++) {
       hasContent = false;
@@ -850,7 +860,7 @@ export default function VillageMap() {
         break;
       }
     }
-    
+
     // ตรวจสอบขอบขวา
     for (let x = maxX; x >= minX; x--) {
       hasContent = false;
@@ -866,7 +876,7 @@ export default function VillageMap() {
         break;
       }
     }
-    
+
     // ตรวจสอบขอบบน
     for (let y = minY; y <= maxY; y++) {
       hasContent = false;
@@ -882,7 +892,7 @@ export default function VillageMap() {
         break;
       }
     }
-    
+
     // ตรวจสอบขอบล่าง
     for (let y = maxY; y >= minY; y--) {
       hasContent = false;
@@ -898,37 +908,40 @@ export default function VillageMap() {
         break;
       }
     }
-    
+
     return { minX, maxX, minY, maxY };
   };
-  
+
   // ฟังก์ชัน flood fill จากจุดเฉพาะ (เชื่อมต่อกันเท่านั้น)
   const floodFillFromPoint = (imageData, startX, startY, targetColor, tolerance = 25) => {
     const width = imageData.width;
     const height = imageData.height;
     const visited = new Set();
     const stack = [{ x: startX, y: startY }];
-    
-    let minX = startX, maxX = startX;
-    let minY = startY, maxY = startY;
+
+    let minX = startX,
+      maxX = startX;
+    let minY = startY,
+      maxY = startY;
     let pixelCount = 0;
-    
+
     console.log(`🎯 เริ่ม flood fill จาก (${startX}, ${startY}) ด้วย tolerance ${tolerance}`);
     console.log(`🎨 สีเป้าหมาย: RGB(${targetColor.r}, ${targetColor.g}, ${targetColor.b})`);
-    
+
     // ตัวอย่างสีที่จะ accept/reject เพื่อ debug
     const sampleColors = [];
-    
-    while (stack.length > 0 && pixelCount < 50000) { // จำกัดขนาดสูงสุดเพื่อป้องกัน zone ใหญ่เกินไป
+
+    while (stack.length > 0 && pixelCount < 50000) {
+      // จำกัดขนาดสูงสุดเพื่อป้องกัน zone ใหญ่เกินไป
       const { x, y } = stack.pop();
       const key = `${x},${y}`;
-      
+
       if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
         continue;
       }
-      
+
       const currentColor = getPixelColor(imageData, x, y);
-      
+
       // เก็บตัวอย่างสีเพื่อ debug (เฉพาะ 10 ตัวแรก)
       if (sampleColors.length < 10) {
         const isSimilar = colorsSimilar(currentColor, targetColor, tolerance);
@@ -941,58 +954,59 @@ export default function VillageMap() {
           accepted: isSimilar && !isEdge
         });
       }
-      
+
       // ตรวจสอบความใกล้เคียงของสี (ยืดหยุ่นขึ้น)
       if (!colorsSimilar(currentColor, targetColor, tolerance)) {
         continue;
       }
-      
+
       // ตรวจสอบว่าเป็นขอบเขตหรือไม่ (ยืดหยุ่นมากขึ้นสำหรับพื้นที่เล็ก)
       if (isEdgeColor(currentColor)) {
         // อนุญาตสีที่ไม่เข้มมากผ่านได้ (เพิ่มความยืดหยุ่น)
         const avgColor = (currentColor.r + currentColor.g + currentColor.b) / 3;
-        if (avgColor < 80) { // ลดเกณฑ์สีเข้มลงเพื่อให้พื้นที่เล็กผ่านได้ง่ายขึ้น
+        if (avgColor < 80) {
+          // ลดเกณฑ์สีเข้มลงเพื่อให้พื้นที่เล็กผ่านได้ง่ายขึ้น
           continue;
         }
       }
-      
+
       visited.add(key);
       pixelCount++;
-      
+
       // อัพเดทขอบเขต
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
-      
+
       // เพิ่มจุดข้างเคียง (4-connected สำหรับความแม่นยำ)
-      const neighbors = [
-        { x: x + 1, y }, { x: x - 1, y }, 
-        { x, y: y + 1 }, { x, y: y - 1 }
-      ];
-      
+      const neighbors = [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }];
+
       for (const neighbor of neighbors) {
         if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
           stack.push(neighbor);
         }
       }
     }
-    
+
     if (pixelCount >= 50000) {
-      console.log('⚠️ หยุด flood fill เนื่องจากขนาดใหญ่เกินไป');
+      console.log("⚠️ หยุด flood fill เนื่องจากขนาดใหญ่เกินไป");
     }
-    
+
     // แสดง debug information
-    console.log('🔍 ตัวอย่างการวิเคราะห์สี:');
+    console.log("🔍 ตัวอย่างการวิเคราะห์สี:");
     sampleColors.forEach(sample => {
-      const status = sample.accepted ? '✅' : (sample.similar ? '🚫(ขอบ)' : '❌(ต่างสี)');
+      const status = sample.accepted ? "✅" : sample.similar ? "🚫(ขอบ)" : "❌(ต่างสี)";
       console.log(`  ${status} ${sample.pos} ${sample.color}`);
     });
-    
+
     console.log(`📈 Flood fill เสร็จ: ${pixelCount} pixels, ขอบเขต: ${maxX - minX + 1}x${maxY - minY + 1}`);
-    
-    return { 
-      minX, maxX, minY, maxY, 
+
+    return {
+      minX,
+      maxX,
+      minY,
+      maxY,
       pixelCount,
       width: maxX - minX + 1,
       height: maxY - minY + 1
@@ -1006,40 +1020,44 @@ export default function VillageMap() {
     const visited = new Set();
     const stack = [{ x: startX, y: startY }];
     const pixels = [];
-    
-    let minX = startX, maxX = startX;
-    let minY = startY, maxY = startY;
+
+    let minX = startX,
+      maxX = startX;
+    let minY = startY,
+      maxY = startY;
     let pixelCount = 0;
-    
+
     console.log(`🎯 เริ่ม advanced flood fill จาก (${startX}, ${startY}) ด้วย tolerance ${tolerance}`);
-    
-    while (stack.length > 0 && pixelCount < 30000) { // จำกัดขนาดให้เหมาะสม
+
+    while (stack.length > 0 && pixelCount < 30000) {
+      // จำกัดขนาดให้เหมาะสม
       const { x, y } = stack.pop();
       const key = `${x},${y}`;
-      
+
       if (visited.has(key) || x < 0 || x >= width || y < 0 || y >= height) {
         continue;
       }
-      
+
       const currentColor = getPixelColor(imageData, x, y);
-      
+
       // ตรวจสอบความใกล้เคียงของสี (ยืดหยุ่นขึ้นเล็กน้อย)
       if (!colorsSimilar(currentColor, targetColor, tolerance + 2)) {
         continue;
       }
-      
+
       // ข้ามสีขอบแต่ยังคงสแกนต่อ (ยืดหยุ่นกับสิ่งกีดขวาง)
       if (isEdgeColor(currentColor)) {
         // ลองสแกนจุดข้างเคียงต่อ แต่ไม่นับ pixel นี้
-        const neighbors = [
-          { x: x + 1, y }, { x: x - 1, y }, 
-          { x, y: y + 1 }, { x, y: y - 1 }
-        ];
-        
+        const neighbors = [{ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 }];
+
         for (const neighbor of neighbors) {
-          if (!visited.has(`${neighbor.x},${neighbor.y}`) && 
-              neighbor.x >= 0 && neighbor.x < width && 
-              neighbor.y >= 0 && neighbor.y < height) {
+          if (
+            !visited.has(`${neighbor.x},${neighbor.y}`) &&
+            neighbor.x >= 0 &&
+            neighbor.x < width &&
+            neighbor.y >= 0 &&
+            neighbor.y < height
+          ) {
             const neighborColor = getPixelColor(imageData, neighbor.x, neighbor.y);
             if (colorsSimilar(neighborColor, targetColor, tolerance) && !isEdgeColor(neighborColor)) {
               stack.push(neighbor);
@@ -1049,41 +1067,48 @@ export default function VillageMap() {
         visited.add(key);
         continue;
       }
-      
+
       visited.add(key);
       pixelCount++;
       pixels.push({ x, y });
-      
+
       // อัพเดทขอบเขต
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
-      
+
       // เพิ่มจุดข้างเคียง (ลองทั้ง 4 และ 8 directions สำหรับการเชื่อมต่อที่ดีขึ้น)
       const neighbors = [
-        { x: x + 1, y }, { x: x - 1, y }, 
-        { x, y: y + 1 }, { x, y: y - 1 },
+        { x: x + 1, y },
+        { x: x - 1, y },
+        { x, y: y + 1 },
+        { x, y: y - 1 },
         // เพิ่มมุมเฉียงสำหรับการตรวจจับที่ดีขึ้น
-        { x: x + 1, y: y + 1 }, { x: x - 1, y: y - 1 },
-        { x: x + 1, y: y - 1 }, { x: x - 1, y: y + 1 }
+        { x: x + 1, y: y + 1 },
+        { x: x - 1, y: y - 1 },
+        { x: x + 1, y: y - 1 },
+        { x: x - 1, y: y + 1 }
       ];
-      
+
       for (const neighbor of neighbors) {
         if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
           stack.push(neighbor);
         }
       }
     }
-    
+
     if (pixelCount >= 30000) {
-      console.log('⚠️ หยุด flood fill เนื่องจากขนาดใหญ่เกินไป');
+      console.log("⚠️ หยุด flood fill เนื่องจากขนาดใหญ่เกินไป");
     }
-    
+
     console.log(`📈 Advanced flood fill เสร็จ: ${pixelCount} pixels, ขอบเขต: ${maxX - minX + 1}x${maxY - minY + 1}`);
-    
-    return { 
-      minX, maxX, minY, maxY, 
+
+    return {
+      minX,
+      maxX,
+      minY,
+      maxY,
       pixelCount,
       width: maxX - minX + 1,
       height: maxY - minY + 1,
@@ -1094,29 +1119,29 @@ export default function VillageMap() {
   // ฟังก์ชันหา rotated bounding box ที่ดีที่สุด (แบบง่าย)
   const findBestRotatedBox = (pixels, imageData, targetColor) => {
     if (!pixels || pixels.length < 10) return null;
-    
+
     console.log(`🔄 วิเคราะห์ rotated box จาก ${pixels.length} pixels`);
-    
+
     // ทดลองมุมหลักๆ
     const angles = [0, 15, 30, 45, 60, 75, 90];
     let bestScore = 0;
     let bestBox = null;
-    
+
     for (const angle of angles) {
       const box = calculateSimpleRotatedBox(pixels, angle);
       if (box) {
         // คำนวณคะแนนจากการใช้พื้นที่
         const utilization = pixels.length / box.area;
-        const aspectScore = Math.min(box.aspectRatio, 1/box.aspectRatio);
+        const aspectScore = Math.min(box.aspectRatio, 1 / box.aspectRatio);
         const score = utilization * aspectScore;
-        
+
         if (score > bestScore && utilization > 0.3) {
           bestScore = score;
           bestBox = { ...box, score };
         }
       }
     }
-    
+
     return bestBox;
   };
 
@@ -1125,74 +1150,71 @@ export default function VillageMap() {
     const angleRad = (angleDegrees * Math.PI) / 180;
     const cos = Math.cos(angleRad);
     const sin = Math.sin(angleRad);
-    
+
     // หาจุดศูนย์กลาง
     const centerX = pixels.reduce((sum, p) => sum + p.x, 0) / pixels.length;
     const centerY = pixels.reduce((sum, p) => sum + p.y, 0) / pixels.length;
-    
+
     // หมุนจุดและหาขอบเขต
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    
+    let minX = Infinity,
+      maxX = -Infinity;
+    let minY = Infinity,
+      maxY = -Infinity;
+
     for (const pixel of pixels) {
       const dx = pixel.x - centerX;
       const dy = pixel.y - centerY;
-      
+
       const rotX = centerX + dx * cos - dy * sin;
       const rotY = centerY + dx * sin + dy * cos;
-      
+
       minX = Math.min(minX, rotX);
       maxX = Math.max(maxX, rotX);
       minY = Math.min(minY, rotY);
       maxY = Math.max(maxY, rotY);
     }
-    
+
     const width = maxX - minX;
     const height = maxY - minY;
-    
+
     return {
       angle: angleDegrees,
       width,
       height,
       area: width * height,
       aspectRatio: width / height,
-      corners: [
-        { x: minX, y: minY },
-        { x: maxX, y: minY },
-        { x: maxX, y: maxY },
-        { x: minX, y: maxY }
-      ]
+      corners: [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }]
     };
   };
 
   // ฟังก์ชันเชื่อม region ที่อยู่ใกล้กันและเป็นสีเดียวกัน
   const connectNearbyRegions = (regions, maxDistance = 15) => {
     if (regions.length <= 1) return regions;
-    
+
     const connected = [];
     const processed = new Set();
-    
+
     for (let i = 0; i < regions.length; i++) {
       if (processed.has(i)) continue;
-      
+
       const group = [regions[i]];
       processed.add(i);
-      
+
       // หา regions ที่อยู่ใกล้กัน
       for (let j = i + 1; j < regions.length; j++) {
         if (processed.has(j)) continue;
-        
+
         const distance = Math.min(
           Math.abs(regions[i].centerX - regions[j].centerX),
           Math.abs(regions[i].centerY - regions[j].centerY)
         );
-        
+
         if (distance <= maxDistance) {
           group.push(regions[j]);
           processed.add(j);
         }
       }
-      
+
       // รวม bounds ของ group
       if (group.length > 1) {
         const combinedBounds = {
@@ -1205,20 +1227,20 @@ export default function VillageMap() {
         combinedBounds.width = combinedBounds.maxX - combinedBounds.minX + 1;
         combinedBounds.height = combinedBounds.maxY - combinedBounds.minY + 1;
         connected.push(combinedBounds);
-        
+
         console.log(`🔗 เชื่อม ${group.length} พื้นที่เข้าด้วยกัน -> ${combinedBounds.width}x${combinedBounds.height}`);
       } else {
         connected.push(group[0]);
       }
     }
-    
+
     return connected;
   };
 
   // จัดการการคลิกที่ภาพ (สร้าง marker หรือ zone อัตโนมัติ)
-  const handleImageClick = async (e) => {
-    console.log('🖱️ Image click detected!', { ctrlKey: e.ctrlKey, metaKey: e.metaKey });
-    
+  const handleImageClick = async e => {
+    console.log("🖱️ Image click detected!", { ctrlKey: e.ctrlKey, metaKey: e.metaKey });
+
     if (
       isDragging ||
       hasDragged ||
@@ -1230,7 +1252,7 @@ export default function VillageMap() {
       selectedZones.length > 0 ||
       justFinishedGroupSelection
     ) {
-      console.log('🚫 Click blocked due to ongoing operation');
+      console.log("🚫 Click blocked due to ongoing operation");
       setHasDragged(false);
       setJustFinishedGroupSelection(false);
       return;
@@ -1260,17 +1282,21 @@ export default function VillageMap() {
     // ถ้ากด Ctrl+Click ให้ลองตรวจจับขอบเขตพื้นที่อัตโนมัติ
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault(); // ป้องกัน default behavior
-      console.log('🔍 Ctrl+Click detected - starting auto zone detection...');
+      console.log("🔍 Ctrl+Click detected - starting auto zone detection...");
       console.log(`📍 Position: (${x.toFixed(1)}, ${y.toFixed(1)})`);
       try {
         const bounds = await detectAreaBounds(x, y);
-        console.log('🎯 Detection result:', bounds);
-        
+        console.log("🎯 Detection result:", bounds);
+
         // ไม่มีขีดจำกัดขนาดขั้นต่ำ - สร้าง zone ได้ทุกขนาด
         const isValidSize = bounds && bounds.width > 0 && bounds.height > 0;
-        
-        console.log(`📏 ตรวจสอบขนาด: ${bounds?.width}x${bounds?.height} (${bounds?.pixelCount} pixels) - ${isValidSize ? 'ผ่าน' : 'ไม่ผ่าน'}`);
-        
+
+        console.log(
+          `📏 ตรวจสอบขนาด: ${bounds?.width}x${bounds?.height} (${bounds?.pixelCount} pixels) - ${
+            isValidSize ? "ผ่าน" : "ไม่ผ่าน"
+          }`
+        );
+
         if (isValidSize) {
           // สร้าง zone อัตโนมัติ
           setCurrentSelection({
@@ -1279,14 +1305,14 @@ export default function VillageMap() {
             endX: bounds.x + bounds.width,
             endY: bounds.y + bounds.height
           });
-          
+
           // สร้างชื่อ Zone สำหรับการตรวจจับแบบครบถ้วน
           const generateZoneName = (areaType, bounds) => {
             const zoneNumber = zones.length + 1;
             const aspectRatio = bounds.width / bounds.height;
             const area = bounds.width * bounds.height;
-            
-            if (areaType === 'complete' || areaType === 'connected') {
+
+            if (areaType === "complete" || areaType === "connected") {
               // ตั้งชื่อตามลักษณะของพื้นที่เชื่อมต่อกัน (รองรับพื้นที่เล็กมาก)
               if (aspectRatio > 3) {
                 return `แถบแนวนอน ${zoneNumber}`;
@@ -1302,7 +1328,7 @@ export default function VillageMap() {
                 return `ช่องเล็ก ${zoneNumber}`; // สำหรับพื้นที่เล็กมากๆ
               }
             }
-            
+
             // สำหรับ areaType อื่นๆ (fallback)
             if (aspectRatio > 3) {
               return `พื้นที่แนวนอน ${zoneNumber}`;
@@ -1311,10 +1337,10 @@ export default function VillageMap() {
             } else {
               return `พื้นที่ ${zoneNumber}`;
             }
-            
+
             // Fallback สำหรับ areaType อื่นๆ
             switch (areaType) {
-              case 'corridor':
+              case "corridor":
                 if (aspectRatio > 2) {
                   return `ทางเดินแนวนอน ${zoneNumber}`;
                 } else if (aspectRatio < 0.5) {
@@ -1322,7 +1348,7 @@ export default function VillageMap() {
                 } else {
                   return `ทางเดิน ${zoneNumber}`;
                 }
-              case 'room':
+              case "room":
                 if (bounds.width > 80 && bounds.height > 80) {
                   return `บล็อก ${zoneNumber}`;
                 } else {
@@ -1332,40 +1358,40 @@ export default function VillageMap() {
                 return `พื้นที่สีเดียวกัน ${zoneNumber}`;
             }
           };
-          
+
           // ใช้ข้อมูลประเภทพื้นที่จาก bounds
-          const detectedAreaType = bounds.areaType || 'complete';
+          const detectedAreaType = bounds.areaType || "complete";
           const zoneName = generateZoneName(detectedAreaType, bounds);
-          const pixelInfo = bounds.pixelCount ? ` (${bounds.pixelCount.toLocaleString()} pixels)` : '';
-          
+          const pixelInfo = bounds.pixelCount ? ` (${bounds.pixelCount.toLocaleString()} pixels)` : "";
+
           console.log(`🏗️ สร้าง Zone: ${zoneName}${pixelInfo} - ประเภท: ${detectedAreaType}`);
-          
+
           // เลือกสีตามลักษณะของพื้นที่ (รองรับพื้นที่เล็กมาก)
-          let zoneColor = 'blue'; // สีเริ่มต้น
+          let zoneColor = "blue"; // สีเริ่มต้น
           const aspectRatio = bounds.width / bounds.height;
           const area = bounds.width * bounds.height;
-          
+
           if (aspectRatio > 3 || aspectRatio < 0.33) {
-            zoneColor = 'cyan'; // สำหรับแถบยาว
+            zoneColor = "cyan"; // สำหรับแถบยาว
           } else if (area > 5000) {
-            zoneColor = 'emerald'; // สำหรับพื้นที่ใหญ่
+            zoneColor = "emerald"; // สำหรับพื้นที่ใหญ่
           } else if (area < 200) {
-            zoneColor = 'yellow'; // สำหรับช่องเล็กมากๆ
+            zoneColor = "yellow"; // สำหรับช่องเล็กมากๆ
           } else {
-            zoneColor = 'blue'; // สำหรับพื้นที่ปกติ
+            zoneColor = "blue"; // สำหรับพื้นที่ปกติ
           }
-          
-          setZoneFormData({ 
-            name: zoneName, 
+
+          setZoneFormData({
+            name: zoneName,
             color: zoneColor
           });
           setShowZoneModal(true);
           return;
         } else {
-          console.log('❌ Detection failed or area too small');
+          console.log("❌ Detection failed or area too small");
         }
       } catch (error) {
-        console.log('❌ Auto-detection failed:', error);
+        console.log("❌ Auto-detection failed:", error);
       }
     }
 
@@ -1403,34 +1429,44 @@ export default function VillageMap() {
 
       switch (action.type) {
         case ACTION_TYPES.ADD_MARKER:
-          setMarkers(markers.filter(m => m.id !== action.data.id));
+          setMarkers(prevMarkers => prevMarkers.filter(m => m.id !== action.data.id));
           break;
         case ACTION_TYPES.REMOVE_MARKER:
-          setMarkers([...markers, action.data]);
+          setMarkers(prevMarkers => [...prevMarkers, action.data]);
           break;
         case ACTION_TYPES.MOVE_MARKER:
-          setMarkers(
-            markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.previousX, y: action.data.previousY } : m))
+          setMarkers(prevMarkers =>
+            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.previousX, y: action.data.previousY } : m))
           );
           break;
         case ACTION_TYPES.RESET_MARKER:
-          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m)));
+          setMarkers(prevMarkers =>
+            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m))
+          );
           break;
         case ACTION_TYPES.ADD_ZONE:
-          setZones(zones.filter(z => z.id !== action.data.id));
+          setZones(prevZones => prevZones.filter(z => z.id !== action.data.id));
+          // ลบ zone ออกจาก visibleZones ด้วย
+          setVisibleZones(prevVisible => {
+            const newVisible = { ...prevVisible };
+            delete newVisible[action.data.id];
+            return newVisible;
+          });
           break;
         case ACTION_TYPES.REMOVE_ZONE:
-          setZones([...zones, action.data]);
+          setZones(prevZones => [...prevZones, action.data]);
+          // เพิ่ม zone กลับเข้า visibleZones ด้วย
+          setVisibleZones(prevVisible => ({ ...prevVisible, [action.data.id]: true }));
           break;
         case ACTION_TYPES.EDIT_ZONE:
-          setZones(zones.map(z => (z.id === action.data.id ? { ...z, ...action.data.previous } : z)));
+          setZones(prevZones => prevZones.map(z => (z.id === action.data.id ? { ...z, ...action.data.previous } : z)));
           break;
         case ACTION_TYPES.EDIT_MARKER:
-          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, ...action.data.previous } : m)));
+          setMarkers(prevMarkers => prevMarkers.map(m => (m.id === action.data.id ? { ...m, ...action.data.previous } : m)));
           break;
         case ACTION_TYPES.MOVE_GROUP:
-          setMarkers(
-            markers.map(marker => {
+          setMarkers(prevMarkers =>
+            prevMarkers.map(marker => {
               const originalMarker = action.data.markers.find(m => m.id === marker.id);
               if (originalMarker) {
                 return {
@@ -1444,8 +1480,8 @@ export default function VillageMap() {
           );
           break;
         case ACTION_TYPES.MOVE_ZONE_GROUP:
-          setZones(
-            zones.map(zone => {
+          setZones(prevZones =>
+            prevZones.map(zone => {
               const originalZone = action.data.zones.find(z => z.id === zone.id);
               if (originalZone) {
                 return {
@@ -1461,8 +1497,8 @@ export default function VillageMap() {
         case ACTION_TYPES.MOVE_MIXED_GROUP:
           // undo สำหรับ markers
           if (action.data.markers) {
-            setMarkers(
-              markers.map(marker => {
+            setMarkers(prevMarkers =>
+              prevMarkers.map(marker => {
                 const originalMarker = action.data.markers.find(m => m.id === marker.id);
                 if (originalMarker) {
                   return {
@@ -1477,8 +1513,8 @@ export default function VillageMap() {
           }
           // undo สำหรับ zones
           if (action.data.zones) {
-            setZones(
-              zones.map(zone => {
+            setZones(prevZones =>
+              prevZones.map(zone => {
                 const originalZone = action.data.zones.find(z => z.id === zone.id);
                 if (originalZone) {
                   return {
@@ -1506,34 +1542,44 @@ export default function VillageMap() {
 
       switch (action.type) {
         case ACTION_TYPES.ADD_MARKER:
-          setMarkers([...markers, action.data]);
+          setMarkers(prevMarkers => [...prevMarkers, action.data]);
           break;
         case ACTION_TYPES.REMOVE_MARKER:
-          setMarkers(markers.filter(m => m.id !== action.data.id));
+          setMarkers(prevMarkers => prevMarkers.filter(m => m.id !== action.data.id));
           break;
         case ACTION_TYPES.MOVE_MARKER:
-          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m)));
+          setMarkers(prevMarkers =>
+            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.x, y: action.data.y } : m))
+          );
           break;
         case ACTION_TYPES.RESET_MARKER:
-          setMarkers(
-            markers.map(m => (m.id === action.data.id ? { ...m, x: action.data.originalX, y: action.data.originalY } : m))
+          setMarkers(prevMarkers =>
+            prevMarkers.map(m => (m.id === action.data.id ? { ...m, x: action.data.originalX, y: action.data.originalY } : m))
           );
           break;
         case ACTION_TYPES.ADD_ZONE:
-          setZones([...zones, action.data]);
+          setZones(prevZones => [...prevZones, action.data]);
+          // เพิ่ม zone กลับเข้า visibleZones ด้วย
+          setVisibleZones(prevVisible => ({ ...prevVisible, [action.data.id]: true }));
           break;
         case ACTION_TYPES.REMOVE_ZONE:
-          setZones(zones.filter(z => z.id !== action.data.id));
+          setZones(prevZones => prevZones.filter(z => z.id !== action.data.id));
+          // ลบ zone ออกจาก visibleZones ด้วย
+          setVisibleZones(prevVisible => {
+            const newVisible = { ...prevVisible };
+            delete newVisible[action.data.id];
+            return newVisible;
+          });
           break;
         case ACTION_TYPES.EDIT_ZONE:
-          setZones(zones.map(z => (z.id === action.data.id ? { ...z, ...action.data.current } : z)));
+          setZones(prevZones => prevZones.map(z => (z.id === action.data.id ? { ...z, ...action.data.current } : z)));
           break;
         case ACTION_TYPES.EDIT_MARKER:
-          setMarkers(markers.map(m => (m.id === action.data.id ? { ...m, ...action.data.current } : m)));
+          setMarkers(prevMarkers => prevMarkers.map(m => (m.id === action.data.id ? { ...m, ...action.data.current } : m)));
           break;
         case ACTION_TYPES.MOVE_GROUP:
-          setMarkers(
-            markers.map(marker => {
+          setMarkers(prevMarkers =>
+            prevMarkers.map(marker => {
               const movedMarker = action.data.markers.find(m => m.id === marker.id);
               if (movedMarker) {
                 return {
@@ -1547,8 +1593,8 @@ export default function VillageMap() {
           );
           break;
         case ACTION_TYPES.MOVE_ZONE_GROUP:
-          setZones(
-            zones.map(zone => {
+          setZones(prevZones =>
+            prevZones.map(zone => {
               const movedZone = action.data.zones.find(z => z.id === zone.id);
               if (movedZone) {
                 return {
@@ -1564,8 +1610,8 @@ export default function VillageMap() {
         case ACTION_TYPES.MOVE_MIXED_GROUP:
           // redo สำหรับ markers
           if (action.data.markers) {
-            setMarkers(
-              markers.map(marker => {
+            setMarkers(prevMarkers =>
+              prevMarkers.map(marker => {
                 const movedMarker = action.data.markers.find(m => m.id === marker.id);
                 if (movedMarker) {
                   return {
@@ -1580,8 +1626,8 @@ export default function VillageMap() {
           }
           // redo สำหรับ zones
           if (action.data.zones) {
-            setZones(
-              zones.map(zone => {
+            setZones(prevZones =>
+              prevZones.map(zone => {
                 const movedZone = action.data.zones.find(z => z.id === zone.id);
                 if (movedZone) {
                   return {
@@ -1622,7 +1668,7 @@ export default function VillageMap() {
     () => {
       const handleKeyDown = e => {
         if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-    e.preventDefault();
+          e.preventDefault();
           undo();
         }
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "Z") {
@@ -1871,9 +1917,13 @@ export default function VillageMap() {
     // ตรวจสอบว่า marker นี้อยู่ในกลุ่มที่เลือกหรือไม่
     if (selectedMarkers.includes(marker.id) && selectedMarkers.length > 0) {
       // ถ้าอยู่ในกลุ่มที่เลือก ให้ใช้การลากกลุ่มแทน
-      const rect = imageRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - containerRect.left;
+      const mouseY = e.clientY - containerRect.top;
+
+      // แปลงเป็นตำแหน่งจริงบนรูปภาพ
+      const x = (mouseX - panOffset.x) / zoomLevel;
+      const y = (mouseY - panOffset.y) / zoomLevel;
 
       // ถ้ามีทั้ง markers และ zones ที่เลือกไว้ ให้ใช้การลากแบบผสม
       if (selectedZones.length > 0) {
@@ -1941,8 +1991,21 @@ export default function VillageMap() {
     if (!draggedMarker || !isDragging) return;
 
     const rect = imageRef.current.getBoundingClientRect();
-    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    // คำนวณตำแหน่งเมาส์ที่ถูกต้องโดยคำนึงถึง zoom และ pan
+    const mouseX = e.clientX - containerRect.left;
+    const mouseY = e.clientY - containerRect.top;
+
+    // แปลงเป็นตำแหน่งจริงบนรูปภาพ
+    const x = (mouseX - panOffset.x) / zoomLevel;
+    const y = (mouseY - panOffset.y) / zoomLevel;
+
+    // จำกัดขอบเขตให้อยู่ในรูปภาพ
+    const imageWidth = rect.width / zoomLevel;
+    const imageHeight = rect.height / zoomLevel;
+    const clampedX = Math.max(0, Math.min(x, imageWidth));
+    const clampedY = Math.max(0, Math.min(y, imageHeight));
 
     setMarkers(
       markers.map(marker => {
@@ -1950,7 +2013,7 @@ export default function VillageMap() {
           const previousX = marker.x;
           const previousY = marker.y;
 
-          const updatedMarker = { ...marker, x, y };
+          const updatedMarker = { ...marker, x: clampedX, y: clampedY };
           const zone = findMarkerZone(updatedMarker);
           if (zone) {
             updatedMarker.group = zone.name;
@@ -1960,8 +2023,8 @@ export default function VillageMap() {
             id: marker.id,
             previousX,
             previousY,
-            x,
-            y
+            x: clampedX,
+            y: clampedY
           });
 
           return updatedMarker;
@@ -2546,11 +2609,15 @@ export default function VillageMap() {
         const offsetX = newX - referenceMarker.x;
         const offsetY = newY - referenceMarker.y;
 
+        // คำนวณขอบเขตที่ถูกต้องตาม zoom
+        const imageWidth = rect.width / zoomLevel;
+        const imageHeight = rect.height / zoomLevel;
+
         setMarkers(prevMarkers =>
           prevMarkers.map(marker => {
             if (selectedMarkers.includes(marker.id)) {
-              const newMarkerX = Math.max(0, Math.min(marker.x + offsetX, rect.width));
-              const newMarkerY = Math.max(0, Math.min(marker.y + offsetY, rect.height));
+              const newMarkerX = Math.max(0, Math.min(marker.x + offsetX, imageWidth));
+              const newMarkerY = Math.max(0, Math.min(marker.y + offsetY, imageHeight));
               return { ...marker, x: newMarkerX, y: newMarkerY };
             }
             return marker;
@@ -2572,13 +2639,17 @@ export default function VillageMap() {
 
       // อัพเดท markers
       if (selectedMarkers.length > 0) {
+        // คำนวณขอบเขตที่ถูกต้องตาม zoom
+        const imageWidth = rect.width / zoomLevel;
+        const imageHeight = rect.height / zoomLevel;
+
         setMarkers(prevMarkers =>
           prevMarkers.map(marker => {
             if (selectedMarkers.includes(marker.id)) {
               const originalX = marker.originalX || marker.x;
               const originalY = marker.originalY || marker.y;
-              const newMarkerX = Math.max(0, Math.min(originalX + offsetX, rect.width));
-              const newMarkerY = Math.max(0, Math.min(originalY + offsetY, rect.height));
+              const newMarkerX = Math.max(0, Math.min(originalX + offsetX, imageWidth));
+              const newMarkerY = Math.max(0, Math.min(originalY + offsetY, imageHeight));
               return { ...marker, x: newMarkerX, y: newMarkerY };
             }
             return marker;
@@ -2588,13 +2659,17 @@ export default function VillageMap() {
 
       // อัพเดท zones
       if (selectedZones.length > 0) {
+        // คำนวณขอบเขตที่ถูกต้องตาม zoom
+        const imageWidth = rect.width / zoomLevel;
+        const imageHeight = rect.height / zoomLevel;
+
         setZones(prevZones =>
           prevZones.map(zone => {
             if (selectedZones.includes(zone.id)) {
               const originalX = zone.originalX || zone.x;
               const originalY = zone.originalY || zone.y;
-              const newZoneX = Math.max(0, Math.min(originalX + offsetX, rect.width - zone.width));
-              const newZoneY = Math.max(0, Math.min(originalY + offsetY, rect.height - zone.height));
+              const newZoneX = Math.max(0, Math.min(originalX + offsetX, imageWidth - zone.width));
+              const newZoneY = Math.max(0, Math.min(originalY + offsetY, imageHeight - zone.height));
               return { ...zone, x: newZoneX, y: newZoneY };
             }
             return zone;
@@ -2617,11 +2692,15 @@ export default function VillageMap() {
         const offsetX = newX - referenceZone.x;
         const offsetY = newY - referenceZone.y;
 
+        // คำนวณขอบเขตที่ถูกต้องตาม zoom
+        const imageWidth = rect.width / zoomLevel;
+        const imageHeight = rect.height / zoomLevel;
+
         setZones(prevZones =>
           prevZones.map(zone => {
             if (selectedZones.includes(zone.id)) {
-              const newZoneX = Math.max(0, Math.min(zone.x + offsetX, rect.width - zone.width));
-              const newZoneY = Math.max(0, Math.min(zone.y + offsetY, rect.height - zone.height));
+              const newZoneX = Math.max(0, Math.min(zone.x + offsetX, imageWidth - zone.width));
+              const newZoneY = Math.max(0, Math.min(zone.y + offsetY, imageHeight - zone.height));
               return { ...zone, x: newZoneX, y: newZoneY };
             }
             return zone;
@@ -3284,9 +3363,14 @@ export default function VillageMap() {
     ];
 
     // คำนวณตำแหน่งปุ่มหมุนที่ไม่ได้รับผลกระทบจากการหมุน zone
-    const rotateButtonDistance = displayZone.shape === "triangle" 
-      ? (zoomLevel >= 2 ? Math.max(36, 48 / zoomLevel) : Math.max(48, Math.min(64, 54 * zoomLevel)))
-      : (zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(32, Math.min(48, 36 * zoomLevel)));
+    const rotateButtonDistance =
+      displayZone.shape === "triangle"
+        ? zoomLevel >= 2
+          ? Math.max(36, 48 / zoomLevel)
+          : Math.max(48, Math.min(64, 54 * zoomLevel))
+        : zoomLevel >= 2
+        ? Math.max(24, 32 / zoomLevel)
+        : Math.max(32, Math.min(48, 36 * zoomLevel));
 
     const rotateButtonSize = zoomLevel >= 2 ? Math.max(24, 32 / zoomLevel) : Math.max(28, Math.min(40, 32 * zoomLevel));
     const finalRotateButtonSize = Math.max(24, Math.min(40, rotateButtonSize));
@@ -3300,30 +3384,30 @@ export default function VillageMap() {
     return (
       <div className="group">
         {/* Zone หลัก */}
-      <div
-        key={zone.id}
+        <div
+          key={zone.id}
           className={`absolute ${displayZone.shape !== "triangle" ? zoneColors.bgOpacity : "bg-transparent"} ${
             displayZone.shape !== "triangle" ? zoneColors.border : ""
           } 
             ${isBeingDragged || isDraggingZoneGroup ? "opacity-80" : "opacity-60"} 
             transition-opacity cursor-move
             ${isSelected && selectedZones.length > 1 ? "cursor-move" : ""}`}
-        style={{
+          style={{
             left: zone.x * zoomLevel + panOffset.x,
             top: zone.y * zoomLevel + panOffset.y,
             width: zone.width * zoomLevel,
             height: zone.height * zoomLevel,
             zIndex: isBeingDragged || isDraggingZoneGroup ? 1000 : 5,
-          transform: `rotate(${zone.rotation || 0}deg)`,
+            transform: `rotate(${zone.rotation || 0}deg)`,
             transformOrigin: "center",
             ...getShapeStyles(displayZone.shape),
             ...((isSelected || isClickedSingle) && {
               boxShadow: `0 0 0 3px ${isSelected ? "rgba(59, 130, 246, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
               ...(displayZone.shape !== "triangle" && { borderWidth: "3px" })
             })
-        }}
-        onMouseDown={e => handleZoneMouseDown(e, zone)}
-        onDoubleClick={e => handleZoneDoubleClick(e, zone)}
+          }}
+          onMouseDown={e => handleZoneMouseDown(e, zone)}
+          onDoubleClick={e => handleZoneDoubleClick(e, zone)}
           onClick={e => {
             e.stopPropagation();
             // ถ้าไม่ได้กำลังลาก ให้เลือก zone นี้
@@ -3381,15 +3465,15 @@ export default function VillageMap() {
             }}
             title={displayZone.name}
           >
-          {displayZone.name}
-        </div>
+            {displayZone.name}
+          </div>
 
           {/* เส้นขอบสำหรับสามเหลี่ยม */}
           {displayZone.shape === "triangle" && (
             <svg
               className="absolute inset-0 pointer-events-none"
-              style={{ 
-                width: "100%", 
+              style={{
+                width: "100%",
                 height: "100%"
               }}
               viewBox="0 0 100 100"
@@ -3424,14 +3508,14 @@ export default function VillageMap() {
                         amber: "#F59E0B"
                       }[displayZone.color] || "#3B82F6"
                 }
-              strokeWidth="2"
+                strokeWidth="2"
                 strokeDasharray={isSelected || isClickedSingle ? "none" : "4,2"}
                 vectorEffect="non-scaling-stroke"
-            />
-          </svg>
+              />
+            </svg>
           )}
 
-        {/* จุดจับสำหรับปรับขนาด */}
+          {/* จุดจับสำหรับปรับขนาด */}
           {resizeHandles.map(handle => {
             // คำนวณขนาดจุดจับที่เหมาะสม - ปรับให้มองเห็นได้ดีแม้เมื่อ zoom มาก
             const zoneDisplaySize = Math.max(zone.width * zoomLevel, zone.height * zoomLevel);
@@ -3449,12 +3533,12 @@ export default function VillageMap() {
             const handleOffset = handleSize / 2;
 
             return (
-          <div
-            key={handle.position}
+              <div
+                key={handle.position}
                 className={`absolute bg-white border-3 ${zoneColors.border} rounded-full 
                 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-xl ring-1 ring-gray-300`}
-            style={{
-              ...handle.style,
+                style={{
+                  ...handle.style,
                   // ปรับตำแหน่งให้ถูกต้องตามขนาดจุดจับ
                   ...(handle.style.top === -5 && { top: -handleOffset }),
                   ...(handle.style.bottom === -5 && { bottom: -handleOffset }),
@@ -3462,12 +3546,12 @@ export default function VillageMap() {
                   ...(handle.style.right === -5 && { right: -handleOffset }),
                   width: `${handleSize}px`,
                   height: `${handleSize}px`,
-              cursor: handle.cursor,
+                  cursor: handle.cursor,
                   zIndex: 1001,
                   boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3), 0 0 0 2px white"
-            }}
-            onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
-          />
+                }}
+                onMouseDown={e => handleZoneMouseDown(e, zone, handle.position)}
+              />
             );
           })}
         </div>
@@ -3817,8 +3901,6 @@ export default function VillageMap() {
     }
   };
 
-
-
   return (
     <div className="relative w-full max-w-4xl mx-auto">
       {isLoading ? (
@@ -3903,16 +3985,16 @@ export default function VillageMap() {
 
                   const width =
                     Math.abs(
-                        isSelectingZone && selectionStart && selectionEnd
-                          ? selectionEnd.x - selectionStart.x
-                          : currentSelection.endX - currentSelection.startX
+                      isSelectingZone && selectionStart && selectionEnd
+                        ? selectionEnd.x - selectionStart.x
+                        : currentSelection.endX - currentSelection.startX
                     ) * zoomLevel;
 
                   const height =
                     Math.abs(
-                        isSelectingZone && selectionStart && selectionEnd
-                          ? selectionEnd.y - selectionStart.y
-                          : currentSelection.endY - currentSelection.startY
+                      isSelectingZone && selectionStart && selectionEnd
+                        ? selectionEnd.y - selectionStart.y
+                        : currentSelection.endY - currentSelection.startY
                     ) * zoomLevel;
 
                   const left =
@@ -3994,28 +4076,24 @@ export default function VillageMap() {
                                   cyan: "rgba(6, 182, 212, 0.3)",
                                   amber: "rgba(245, 158, 11, 0.3)"
                                 };
-                                return colorMapping[displayZone.color] || colorMapping["blue"];
+                                return colorMapping[zoneFormData.color] || colorMapping["blue"];
                               })()}
                               stroke={
-                                isSelected
-                                  ? "#3B82F6"
-                                  : isClickedSingle
-                                  ? "#EF4444"
-                                  : {
-                                      blue: "#3B82F6",
-                                      purple: "#9333EA",
-                                      orange: "#F97316",
-                                      emerald: "#10B981",
-                                      rose: "#F43F5E",
-                                      cyan: "#06B6D4",
-                                      amber: "#F59E0B"
-                                    }[displayZone.color] || "#3B82F6"
+                                {
+                                  blue: "#3B82F6",
+                                  purple: "#9333EA",
+                                  orange: "#F97316",
+                                  emerald: "#10B981",
+                                  rose: "#F43F5E",
+                                  cyan: "#06B6D4",
+                                  amber: "#F59E0B"
+                                }[zoneFormData.color] || "#3B82F6"
                               }
-                            strokeWidth="2"
-                              strokeDasharray={isSelected || isClickedSingle ? "none" : "4,2"}
+                              strokeWidth="2"
+                              strokeDasharray="4,2"
                               vectorEffect="non-scaling-stroke"
-                          />
-                        </svg>
+                            />
+                          </svg>
                         </>
                       ) : selectedZoneShape === "circle" ? (
                         <div
@@ -4041,7 +4119,7 @@ export default function VillageMap() {
                     height: Math.abs(groupSelectionEnd.y - groupSelectionStart.y) * zoomLevel
                   }}
                 />
-                )}
+              )}
 
               {/* Markers */}
               {markers.map(marker => renderMarker(marker, true))}
@@ -4062,17 +4140,17 @@ export default function VillageMap() {
                     onClick={undo}
                     disabled={currentIndex < 0}
                     className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ย้อนกลับการกระทำ (Ctrl+Z)"
+                    title="ย้อนกลับ (Back)"
                   >
-                    ↶
+                    ←
                   </button>
                   <button
                     onClick={redo}
                     disabled={currentIndex >= history.length - 1}
                     className="w-8 h-8 bg-gray-500 text-white rounded-full text-sm hover:bg-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-md hover:shadow-lg"
-                    title="ทำซ้ำการกระทำ (Ctrl+Shift+Z)"
+                    title="ถัดไป (Next)"
                   >
-                    ↷
+                    →
                   </button>
                   <button
                     onClick={resetZoomAndPan}
@@ -4144,9 +4222,6 @@ export default function VillageMap() {
               </div>
             </div>
 
-
-
-
             {/* คำแนะนำการใช้งาน */}
             <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
               <div className="font-medium mb-1">วิธีการใช้งาน:</div>
@@ -4158,7 +4233,8 @@ export default function VillageMap() {
                   • <span className="font-semibold">กดค้างแล้วลาก</span> เพื่อสร้างกลุ่มใหม่
                 </li>
                 <li>
-                  • <span className="font-semibold text-green-600">🆕 Ctrl+คลิก</span> ที่จุดใดๆ บนภาพ เพื่อสร้าง Zone อัตโนมัติ<span className="text-green-800 font-semibold">ครอบคลุมพื้นที่สีเดียวกันที่เชื่อมต่อกัน</span>รอบจุดที่คลิก
+                  • <span className="font-semibold text-green-600">🆕 Ctrl+คลิก</span> ที่จุดใดๆ บนภาพ เพื่อสร้าง Zone อัตโนมัติ
+                  <span className="text-green-800 font-semibold">ครอบคลุมพื้นที่สีเดียวกันที่เชื่อมต่อกัน</span>รอบจุดที่คลิก
                 </li>
                 <li>• ลากจุดสีเพื่อย้ายตำแหน่ง</li>
                 <li>
@@ -4261,7 +4337,6 @@ export default function VillageMap() {
             )}
 
             {/* แสดงข้อมูล Zoom */}
-
           </div>
 
           {/* รายการกลุ่มด้านขวา */}

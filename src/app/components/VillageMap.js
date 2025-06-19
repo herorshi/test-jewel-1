@@ -14,7 +14,8 @@ const ACTION_TYPES = {
   EDIT_ZONE: "EDIT_ZONE",
   MOVE_GROUP: "MOVE_GROUP",
   MOVE_ZONE_GROUP: "MOVE_ZONE_GROUP",
-  MOVE_MIXED_GROUP: "MOVE_MIXED_GROUP"
+  MOVE_MIXED_GROUP: "MOVE_MIXED_GROUP",
+  ROTATE_MARKER: "ROTATE_MARKER" // เพิ่ม action type สำหรับการหมุน marker
 };
 
 export default function VillageMap() {
@@ -26,6 +27,41 @@ export default function VillageMap() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentPosition, setCurrentPosition] = useState({ x: 0, y: 0 });
   const [formData, setFormData] = useState({ name: "", group: "", color: "red" });
+
+  // เพิ่มฟังก์ชันสำหรับ log ข้อมูล marker
+  const logMarkerInfo = (action, marker) => {
+    console.log('logMarkerInfo')
+    console.log(`🎯 ${action} Marker:`, {
+      id: marker.id,
+      name: marker.name,
+      color: marker.color,
+      position: { x: marker.x.toFixed(2), y: marker.y.toFixed(2) },
+      size: markerSizes[marker.id] || DEFAULT_MARKER_SIZE,
+      rotation: marker.rotation || 0,
+      rotationDegrees: ((marker.rotation || 0) * 180 / Math.PI).toFixed(2) + '°',
+      group: marker.group || 'Marker'
+    });
+  };
+
+  // เพิ่มฟังก์ชันสำหรับ log ข้อมูล zone
+  const logZoneInfo = (action, zone) => {
+    console.log('logZoneInfo');
+    console.log(`🔷 ${action} Zone:`, {
+      id: zone.id,
+      name: zone.name,
+      color: zone.color,
+      shape: zone.shape,
+      position: { 
+        x: zone.x.toFixed(2), 
+        y: zone.y.toFixed(2),
+        width: zone.width.toFixed(2),
+        height: zone.height.toFixed(2)
+      },
+      rotation: zone.rotation || 0,
+      rotationDegrees: (zone.rotation || 0).toFixed(2) + '°',
+      markersCount: markers.filter(m => isPointInZone(m.x, m.y, zone)).length
+    });
+  };
   const [editMarkerData, setEditMarkerData] = useState(null);
   const [originalMarkerData, setOriginalMarkerData] = useState(null);
   const [zoneFormData, setZoneFormData] = useState({ name: "", color: "blue" });
@@ -87,6 +123,10 @@ export default function VillageMap() {
   const [copiedMarkers, setCopiedMarkers] = useState([]);
   // เพิ่ม state สำหรับ force re-render
   const [forceRenderKey, setForceRenderKey] = useState(0);
+  // เพิ่ม state สำหรับการหมุน marker
+  const [isRotatingMarker, setIsRotatingMarker] = useState(false);
+  const [rotatingMarkerId, setRotatingMarkerId] = useState(null);
+  const [markerRotationStart, setMarkerRotationStart] = useState(null);
 
   // สีและชื่อสี
   const colorOptions = [
@@ -138,7 +178,7 @@ export default function VillageMap() {
 
     if (rotation !== 0) {
       // แปลงองศาเป็นเรเดียน
-      const rad = (-rotation * Math.PI) / 180;
+      const rad = -rotation * (Math.PI / 180);
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
 
@@ -1531,6 +1571,13 @@ export default function VillageMap() {
             );
           }
           break;
+        case ACTION_TYPES.ROTATE_MARKER:
+          setMarkers(prevMarkers =>
+            prevMarkers.map(marker =>
+              marker.id === action.data.id ? { ...marker, rotation: action.data.rotation } : marker
+            )
+          );
+          break;
       }
 
       setCurrentIndex(currentIndex - 1);
@@ -1644,6 +1691,13 @@ export default function VillageMap() {
             );
           }
           break;
+        case ACTION_TYPES.ROTATE_MARKER:
+          setMarkers(prevMarkers =>
+            prevMarkers.map(marker =>
+              marker.id === action.data.id ? { ...marker, rotation: action.data.rotation } : marker
+            )
+          );
+          break;
       }
 
       setCurrentIndex(nextIndex);
@@ -1745,11 +1799,13 @@ export default function VillageMap() {
         originalY: currentPosition.y,
         name: formData.name,
         group: formData.group,
-        color: formData.color
+        color: formData.color,
+        rotation: 0
       };
 
       setMarkers([...markers, newMarker]);
       addToHistory(ACTION_TYPES.ADD_MARKER, newMarker);
+      logMarkerInfo('สร้าง', newMarker);
 
       setShowPopup(false);
       setFormData({ name: "", group: "", color: "red" });
@@ -1785,6 +1841,7 @@ export default function VillageMap() {
 
       setZones([...zones, newZone]);
       addToHistory(ACTION_TYPES.ADD_ZONE, newZone);
+      logZoneInfo('สร้าง', newZone);
       setShowZoneModal(false);
       setZoneFormData({ name: "", color: "blue" });
       // ไม่รีเซ็ต selectedZoneShape เพื่อให้คงรูปทรงปัจจุบันไว้
@@ -1800,6 +1857,7 @@ export default function VillageMap() {
   const removeMarker = markerId => {
     const markerToRemove = markers.find(m => m.id === markerId);
     if (markerToRemove) {
+      logMarkerInfo('ลบ', markerToRemove);
       setMarkers(markers.filter(marker => marker.id !== markerId));
       addToHistory(ACTION_TYPES.REMOVE_MARKER, markerToRemove);
     }
@@ -1808,6 +1866,7 @@ export default function VillageMap() {
   const removeZone = zoneId => {
     const zoneToRemove = zones.find(z => z.id === zoneId);
     if (zoneToRemove) {
+      logZoneInfo('ลบ', zoneToRemove);
       setZones(zones.filter(zone => zone.id !== zoneId));
       addToHistory(ACTION_TYPES.REMOVE_ZONE, zoneToRemove);
     }
@@ -1894,7 +1953,8 @@ export default function VillageMap() {
       color: marker.color,
       size: markerSizes[marker.id] || DEFAULT_MARKER_SIZE,
       x: marker.x,
-      y: marker.y
+      y: marker.y,
+      rotation: marker.rotation || 0
     };
 
     setOriginalMarkerData(markerData);
@@ -2030,6 +2090,7 @@ export default function VillageMap() {
             y: clampedY
           });
 
+          logMarkerInfo('เคลื่อนย้าย', updatedMarker);
           return updatedMarker;
         }
         return marker;
@@ -2355,12 +2416,21 @@ export default function VillageMap() {
     }
 
     if (handle === "rotate") {
+      console.log('Setting isRotatingZone to true');
       setIsRotatingZone(true);
       const center = {
         x: zone.x + zone.width / 2,
         y: zone.y + zone.height / 2
       };
       setRotationStartAngle(calculateAngle(center, { x: mouseX, y: mouseY }) - (zone.rotation || 0));
+      // เพิ่มการเซ็ต originalZoneState สำหรับการหมุน
+      setOriginalZoneState({
+        initialX: zone.x,
+        initialY: zone.y,
+        initialWidth: zone.width,
+        initialHeight: zone.height,
+        rotation: zone.rotation || 0
+      });
     } else {
       setOriginalZoneState({
         offsetX: mouseX - zone.x,
@@ -2390,6 +2460,12 @@ export default function VillageMap() {
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y
       });
+      return;
+    }
+
+    // จัดการการหมุน marker
+    if (isRotatingMarker) {
+      handleMarkerRotation(e);
       return;
     }
 
@@ -2726,10 +2802,47 @@ export default function VillageMap() {
   };
 
   // อัพเดทการจัดการ mouse up
+  const handleZoneRotationEnd = () => {
+    if (draggedZone && originalZoneState) {
+      const currentZone = zones.find(z => z.id === draggedZone.id);
+      console.log('currentZone', currentZone);
+      if (currentZone) {
+        logZoneInfo('หมุน', currentZone);
+        addToHistory(ACTION_TYPES.EDIT_ZONE, {
+          id: draggedZone.id,
+          previous: {
+            x: originalZoneState.initialX,
+            y: originalZoneState.initialY,
+            width: originalZoneState.initialWidth,
+            height: originalZoneState.initialHeight,
+            rotation: originalZoneState.rotation
+          },
+          current: {
+            x: currentZone.x,
+            y: currentZone.y,
+            width: currentZone.width,
+            height: currentZone.height,
+            rotation: currentZone.rotation
+          }
+        });
+      }
+    }
+    setIsRotatingZone(false);
+    setDraggedZone(null);
+    setOriginalZoneState(null);
+    setRotationStartAngle(0);
+  };
+
   const handleMouseUp = () => {
     // จัดการ panning
     if (isPanning) {
       setIsPanning(false);
+      return;
+    }
+
+    // จัดการการหมุน marker
+    if (isRotatingMarker) {
+      handleMarkerRotationEnd();
       return;
     }
 
@@ -2897,11 +3010,25 @@ export default function VillageMap() {
       return;
     }
 
-    if (isDraggingZone || isResizingZone || isRotatingZone) {
+    // จัดการการหมุน zone
+    if (isRotatingZone) {
+      console.log('isRotatingZone is true in handleMouseUp');
+      handleZoneRotationEnd();
+      return;
+    }
+
+    if (isDraggingZone || isResizingZone) {
+
       // บันทึกประวัติการเปลี่ยนแปลงของ zone
       if (draggedZone && originalZoneState) {
         const currentZone = zones.find(z => z.id === draggedZone.id);
         if (currentZone) {
+          if (isDraggingZone) {
+            logZoneInfo('เคลื่อนย้าย', currentZone);
+          } else if (isResizingZone) {
+            logZoneInfo('ปรับขนาด', currentZone);
+          }
+
           addToHistory(ACTION_TYPES.EDIT_ZONE, {
             id: draggedZone.id,
             previous: {
@@ -2923,7 +3050,6 @@ export default function VillageMap() {
       }
       setIsDraggingZone(false);
       setIsResizingZone(false);
-      setIsRotatingZone(false);
       setDraggedZone(null);
       setResizeHandle(null);
       setOriginalZoneState(null);
@@ -3031,6 +3157,66 @@ export default function VillageMap() {
       ...prev,
       [markerId]: Math.max(MIN_MARKER_SIZE, Math.min(MAX_MARKER_SIZE, newSize))
     }));
+  };
+
+  // ฟังก์ชันสำหรับการหมุน marker
+  const handleMarkerRotationStart = (e, marker) => {
+    e.stopPropagation();
+    setIsRotatingMarker(true);
+    setRotatingMarkerId(marker.id);
+    const rect = containerRef.current.getBoundingClientRect();
+    const centerX = marker.x * zoomLevel + panOffset.x;
+    const centerY = marker.y * zoomLevel + panOffset.y;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const startAngle = Math.atan2(mouseY - centerY, mouseX - centerX);
+    setMarkerRotationStart({
+      startAngle,
+      initialRotation: marker.rotation || 0,
+      center: { x: centerX, y: centerY }
+    });
+  };
+
+  const handleMarkerRotation = (e) => {
+    if (!isRotatingMarker || !rotatingMarkerId || !markerRotationStart) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const currentAngle = Math.atan2(
+      mouseY - markerRotationStart.center.y,
+      mouseX - markerRotationStart.center.x
+    );
+    
+    const angleDiff = currentAngle - markerRotationStart.startAngle;
+    const newRotation = markerRotationStart.initialRotation + angleDiff;
+    
+    setMarkers(prevMarkers => {
+      const updatedMarkers = prevMarkers.map(marker => {
+        if (marker.id === rotatingMarkerId) {
+          const updatedMarker = { ...marker, rotation: newRotation };
+          logMarkerInfo('หมุน', updatedMarker);
+          return updatedMarker;
+        }
+        return marker;
+      });
+      return updatedMarkers;
+    });
+  };
+
+  const handleMarkerRotationEnd = () => {
+    if (isRotatingMarker && rotatingMarkerId) {
+      const marker = markers.find(m => m.id === rotatingMarkerId);
+      if (marker) {
+        addToHistory(ACTION_TYPES.ROTATE_MARKER, {
+          id: marker.id,
+          rotation: marker.rotation
+        });
+      }
+    }
+    setIsRotatingMarker(false);
+    setRotatingMarkerId(null);
+    setMarkerRotationStart(null);
   };
 
   // เพิ่ม Component สำหรับวาดรูปทรงด้วย Canvas
@@ -3182,7 +3368,8 @@ export default function VillageMap() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                position: "relative"
+                position: "relative",
+                transform: `rotate(${displayMarker.rotation || 0}rad)`
               }}
             >
               {/* ชื่อ marker ตรงกลาง */}
@@ -3217,15 +3404,50 @@ export default function VillageMap() {
               />
             )}
             {isClickedSingle && (
-              <div
-                className="absolute inset-0 border-2 border-red-500 border-solid rounded-full animate-pulse"
-                style={{
-                  width: `${sizeInPixels + 8}px`,
-                  height: `${sizeInPixels + 8}px`,
-                  left: "-4px",
-                  top: "-4px"
-                }}
-              />
+              <>
+                <div
+                  className="absolute inset-0 border-2 border-red-500 border-solid rounded-full animate-pulse"
+                  style={{
+                    width: `${sizeInPixels + 8}px`,
+                    height: `${sizeInPixels + 8}px`,
+                    left: "-4px",
+                    top: "-4px"
+                  }}
+                />
+                {/* Rotation Handle - ตำแหน่งด้านขวา */}
+                <div
+                  className="absolute bg-white rounded-full shadow-xl border-2 border-gray-300 flex items-center justify-center cursor-pointer transition-opacity duration-200"
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    left: `${sizeInPixels + 8}px`,
+                    top: `${sizeInPixels / 2 - 14}px`,
+                    zIndex: 1001,
+                    background: "linear-gradient(180deg, #fff 80%, #e0e7ef 100%)",
+                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px white"
+                  }}
+                  onMouseDown={(e) => handleMarkerRotationStart(e, marker)}
+                  title="หมุน marker"
+                >
+                  <svg
+                    className="text-gray-600"
+                    style={{
+                      width: "16px",
+                      height: "16px"
+                    }}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                </div>
+              </>
             )}
           </div>
           {/* Tooltip */}
@@ -3233,6 +3455,7 @@ export default function VillageMap() {
             <div className="font-semibold">{displayMarker.name}</div>
             <div className="text-gray-300">กลุ่ม: {displayMarker.group}</div>
             <div className="text-gray-300">สี: {colorOptions.find(c => c.value === displayMarker.color)?.label}</div>
+            <div className="text-gray-300">การหมุน: {Math.round((displayMarker.rotation || 0) * (180 / Math.PI))}°</div>
             <div className="flex space-x-1 mt-1">
               <button
                 onClick={e => {
@@ -3628,11 +3851,17 @@ export default function VillageMap() {
         current: editZoneData
       });
 
-      setZones(prevZones =>
-        prevZones.map(zone =>
-          zone.id === editZoneData.id ? { ...zone, name: editZoneData.name, color: editZoneData.color } : zone
-        )
-      );
+      setZones(prevZones => {
+        const updatedZones = prevZones.map(zone => {
+          if (zone.id === editZoneData.id) {
+            const updatedZone = { ...zone, name: editZoneData.name, color: editZoneData.color };
+            logZoneInfo('แก้ไข', updatedZone);
+            return updatedZone;
+          }
+          return zone;
+        });
+        return updatedZones;
+      });
       setShowEditZoneModal(false);
       setEditZoneData(null);
       setOriginalZoneData(null);
@@ -3643,6 +3872,8 @@ export default function VillageMap() {
       }, 50);
     }
   };
+
+
 
   // เพิ่ม useEffect สำหรับจัดการ loading state
   useEffect(() => {
@@ -3919,6 +4150,11 @@ export default function VillageMap() {
     // ลบ early return - บังคับลบแม้จะว่าง
     console.log("🔄 บังคับลบ markers ทั้งหมดไม่ว่าจะมีหรือไม่มี...");
 
+    // Log ข้อมูล markers ทั้งหมดก่อนลบ
+    markers.forEach(marker => {
+      logMarkerInfo('ลบ (กลุ่ม)', marker);
+    });
+
     // บันทึกประวัติการลบ markers ทั้งหมด (ถ้ามี)
     if (markers.length > 0) {
       const currentMarkers = [...markers];
@@ -3977,6 +4213,11 @@ export default function VillageMap() {
 
     // ลบ early return - บังคับลบแม้จะว่าง
     console.log("🗑️ บังคับลบ zones ทั้งหมดไม่ว่าจะมีหรือไม่มี...");
+
+    // Log ข้อมูล zones ทั้งหมดก่อนลบ
+    zones.forEach(zone => {
+      logZoneInfo('ลบ (กลุ่ม)', zone);
+    });
 
     // บันทึกประวัติการลบ zones ทั้งหมด (ถ้ามี)
     if (zones.length > 0) {
@@ -4038,7 +4279,7 @@ export default function VillageMap() {
     console.log("🔥 กำลังบันทึกประวัติ...");
     // บันทึกประวัติการลบทุกอย่าง (ถ้ามี)
     if (markers.length > 0) {
-      markers.forEach(marker => {
+    markers.forEach(marker => {
         addToHistory(ACTION_TYPES.REMOVE_MARKER, marker);
       });
     }
@@ -4410,9 +4651,6 @@ export default function VillageMap() {
               {/* Markers */}
               <div key={`markers-${forceRenderKey}`}>
                 {(() => {
-                  console.log("🔍 Rendering markers:", markers.length, "markers");
-                  console.log("🔍 Markers data:", JSON.stringify(markers, null, 2));
-                  console.log("🔍 forceRenderKey:", forceRenderKey);
                   return markers.map(marker => renderMarker(marker, true));
                 })()}
               </div>
@@ -5054,6 +5292,31 @@ export default function VillageMap() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">การหมุน:</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    value={Math.round((editMarkerData.rotation || 0) * (180 / Math.PI))}
+                    onChange={e =>
+                      setEditMarkerData(prev => ({
+                        ...prev,
+                        rotation: parseInt(e.target.value) * (Math.PI / 180)
+                      }))
+                    }
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
+                    onDragStart={e => e.preventDefault()}
+                    className="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="text-sm text-gray-600 w-12 text-center">
+                    {Math.round((editMarkerData.rotation || 0) * (180 / Math.PI))}°
+                  </span>
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">เลือกสี:</label>
                 <div className="flex items-center justify-center space-x-4">
                   {colorOptions.map(color => (
@@ -5372,3 +5635,4 @@ export default function VillageMap() {
     </div>
   );
 }
+
